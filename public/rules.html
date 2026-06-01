@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Murder Mystery — Rules</title>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600&family=IM+Fell+English:ital@0;1&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0d0908;--surface:#160e0b;--surface2:#1f1411;--gold:#c9a84c;--gold-dim:#7a6230;--crimson:#7a1a1a;--text:#e8d9c0;--text-dim:#8a7560;--border:#2e1f17;--border-gold:#3d2e18;}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{background:var(--bg);color:var(--text);font-family:'IM Fell English',serif;}
+body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellipse at 50% 0%,rgba(122,26,26,.1) 0%,transparent 60%);pointer-events:none;z-index:0;}
+
+.app{max-width:480px;margin:0 auto;padding:1rem;position:relative;z-index:1;padding-bottom:2rem;}
+
+.topbar{display:flex;align-items:center;gap:0.75rem;margin-bottom:1.25rem;padding-bottom:0.75rem;border-bottom:1px solid var(--border);}
+.back-btn{background:transparent;border:1px solid var(--border);border-radius:3px;padding:0.4rem 0.75rem;color:var(--text-dim);font-family:'Cinzel',serif;font-size:0.7rem;letter-spacing:0.1em;cursor:pointer;white-space:nowrap;}
+.title{font-family:'Cinzel',serif;font-size:0.9rem;letter-spacing:0.15em;color:var(--gold);}
+
+.search-wrap{position:relative;margin-bottom:1rem;}
+.search-input{
+  width:100%;background:var(--surface);border:1px solid var(--border);border-radius:3px;
+  padding:0.75rem 0.75rem 0.75rem 2.25rem;color:var(--text);font-family:'IM Fell English',serif;
+  font-size:0.95rem;outline:none;-webkit-appearance:none;
+}
+.search-input:focus{border-color:var(--gold-dim);}
+.search-icon{position:absolute;left:0.75rem;top:50%;transform:translateY(-50%);color:var(--text-dim);font-size:0.9rem;pointer-events:none;}
+.search-input::placeholder{color:var(--text-dim);font-style:italic;}
+
+/* Role filter chips */
+.chips{display:flex;flex-wrap:wrap;gap:0.35rem;margin-bottom:1rem;}
+.chip{
+  padding:0.25rem 0.65rem;background:var(--surface2);border:1px solid var(--border);
+  border-radius:12px;font-size:0.72rem;font-family:'Cinzel',serif;letter-spacing:0.06em;
+  cursor:pointer;color:var(--text-dim);transition:all 0.15s;
+}
+.chip.active{background:rgba(122,26,26,0.3);border-color:var(--crimson);color:var(--gold);}
+.chip.evil-chip.active{background:rgba(122,26,26,0.4);border-color:#8b0000;}
+.chip.good-chip.active{background:rgba(42,92,63,0.3);border-color:#2a5c3f;color:#4caf7a;}
+
+/* Content */
+.section{margin-bottom:1.25rem;}
+.section-header{
+  font-family:'Cinzel',serif;font-size:0.72rem;letter-spacing:0.2em;text-transform:uppercase;
+  color:var(--gold);padding:0.5rem 0;border-bottom:1px solid var(--border);margin-bottom:0.75rem;
+  display:flex;align-items:center;gap:0.5rem;cursor:pointer;
+}
+.section-toggle{color:var(--text-dim);font-size:0.7rem;margin-left:auto;}
+.section-body{display:flex;flex-direction:column;gap:0.5rem;}
+.section-body.collapsed{display:none;}
+
+.rule-card{
+  background:var(--surface);border:1px solid var(--border);border-radius:3px;
+  padding:0.85rem;position:relative;
+}
+.rule-card.evil-card{border-left:3px solid var(--crimson);}
+.rule-card.good-card{border-left:3px solid #2a5c3f;}
+.rule-card.neutral-card{border-left:3px solid var(--border-gold);}
+
+.rule-title{font-family:'Cinzel',serif;font-size:0.85rem;letter-spacing:0.08em;color:var(--gold);margin-bottom:0.4rem;display:flex;align-items:center;gap:0.4rem;}
+.rule-icon{font-size:1rem;}
+.rule-body{font-size:0.85rem;line-height:1.65;color:var(--text);}
+.rule-body ul{padding-left:1.25rem;margin-top:0.35rem;}
+.rule-body li{margin-bottom:0.3rem;}
+.rule-body strong{color:var(--gold-dim);}
+.rule-tag{display:inline-block;font-size:0.62rem;font-family:'Cinzel',serif;letter-spacing:0.08em;padding:0.1rem 0.4rem;border-radius:2px;margin-left:0.5rem;vertical-align:middle;}
+.tag-evil{background:rgba(122,26,26,0.3);border:1px solid var(--crimson);color:#c87070;}
+.tag-good{background:rgba(42,92,63,0.2);border:1px solid #2a5c3f;color:#4caf7a;}
+.tag-night{background:rgba(13,9,24,0.8);border:1px solid #2a1f40;color:#9b8ec4;}
+.tag-day{background:rgba(42,61,26,0.4);border:1px solid #3a5020;color:#8dc45a;}
+
+.highlight{background:rgba(201,168,76,0.15);border-radius:2px;padding:0 2px;}
+
+.no-results{text-align:center;padding:2rem;color:var(--text-dim);font-style:italic;}
+
+::-webkit-scrollbar{width:4px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <button class="back-btn" onclick="history.back()">← Back</button>
+    <div class="title">RULES & ROLES</div>
+  </div>
+
+  <div class="search-wrap">
+    <span class="search-icon">🔍</span>
+    <input type="text" class="search-input" id="search" placeholder="Search roles, rules, actions..." oninput="filterRules()">
+  </div>
+
+  <div class="chips" id="chips">
+    <button class="chip active" data-filter="all" onclick="setFilter('all',this)">All</button>
+    <button class="chip evil-chip" data-filter="evil" onclick="setFilter('evil',this)">Evil</button>
+    <button class="chip good-chip" data-filter="good" onclick="setFilter('good',this)">Good</button>
+    <button class="chip" data-filter="night" onclick="setFilter('night',this)">Night</button>
+    <button class="chip" data-filter="day" onclick="setFilter('day',this)">Day</button>
+    <button class="chip" data-filter="scoring" onclick="setFilter('scoring',this)">Scoring</button>
+  </div>
+
+  <div id="rules-content"></div>
+</div>
+
+<script>
+const RULES = [
+  {
+    section: "Overview",
+    tags: ["all"],
+    id: "overview",
+    cards: [
+      {
+        title: "How to Win",
+        icon: "⚖️",
+        type: "neutral",
+        tags: ["all"],
+        body: `<ul>
+          <li><strong>Good Team</strong> wins by eliminating all Evil players.</li>
+          <li><strong>Evil Team</strong> wins when they reach parity — equal or greater numbers than Good players still alive.</li>
+        </ul>`
+      },
+      {
+        title: "Game Flow",
+        icon: "🔄",
+        type: "neutral",
+        tags: ["all"],
+        body: `Each round follows this order:
+        <ul>
+          <li><strong>Discussion</strong> (5 min) — Talk, accuse, defend</li>
+          <li><strong>Voting</strong> (45s) — Eliminate a suspect</li>
+          <li><strong>Night Actions</strong> (90s) — Submit your role's action privately</li>
+          <li><strong>Night Feedback</strong> (45s) — Read your private results</li>
+        </ul>
+        <strong>Day 1:</strong> No discussion or voting — goes straight to night.`
+      },
+      {
+        title: "Death Rules",
+        icon: "☩",
+        type: "neutral",
+        tags: ["all"],
+        body: `<ul>
+          <li>Dead players cannot speak in town discussion (unless the host allows ghost chat)</li>
+          <li>Dead players do <strong>not</strong> learn who killed them</li>
+          <li>Dead players are shown with a strikethrough on the tracker</li>
+        </ul>`
+      }
+    ]
+  },
+  {
+    section: "Evil Roles",
+    tags: ["evil"],
+    id: "evil",
+    cards: [
+      {
+        title: "Murderer",
+        icon: "🔪",
+        type: "evil",
+        tags: ["evil","night"],
+        body: `Kills one living player each night.
+        <ul>
+          <li>Can kill starting Night 1</li>
+          <li>Kill can be blocked by the <strong>Doctor</strong></li>
+          <li>Kill can be blocked by the <strong>Jailor</strong> (if the Murderer is jailed)</li>
+          <li>Cannot kill the same person the Doctor saves</li>
+        </ul>
+        <strong>Succession:</strong> If the Murderer dies, the next Evil player in line inherits the kill: Assassin → Spy → Witch.`
+      },
+      {
+        title: "Assassin",
+        icon: "⚔️",
+        type: "evil",
+        tags: ["evil","night"],
+        body: `Has <strong>one unblockable kill</strong> for the entire game.
+        <ul>
+          <li>Can use it on any night they choose — or hold it for later</li>
+          <li>Cannot be blocked by the Doctor</li>
+          <li>After using the kill, gains no extra powers (still Evil)</li>
+          <li>If both Murderer and Assassin are dead, succession begins</li>
+        </ul>
+        Available at <strong>14+ players.</strong>`
+      },
+      {
+        title: "Spy",
+        icon: "🔭",
+        type: "evil",
+        tags: ["evil","night"],
+        body: `Each night, bugs one player's house to learn their movements.
+        <ul>
+          <li>If the target <strong>left their house</strong>: learns who they visited</li>
+          <li>If the target <strong>stayed home</strong>: learns they did not leave</li>
+          <li>Spy is part of the Evil succession chain</li>
+        </ul>
+        In 7-player games, Spy does not act on Night 1.`
+      },
+      {
+        title: "Witch",
+        icon: "🧙",
+        type: "evil",
+        tags: ["evil","night"],
+        body: `Mimics a Good role's ability each cycle.
+        <ul>
+          <li>Each night: choose a role to mimic <em>next</em> night, and use your current mimic ability</li>
+          <li>Cannot mimic the same role twice</li>
+          <li>Mimicable roles: Doctor, Detective, Judge, Mayor, Psychic, Medium, Coroner, Spy, Jailor</li>
+          <li>Gets that role's ability for one full day+night cycle</li>
+        </ul>
+        Available at <strong>11+ players.</strong>`
+      }
+    ]
+  },
+  {
+    section: "Good Roles",
+    tags: ["good"],
+    id: "good",
+    cards: [
+      {
+        title: "Doctor",
+        icon: "💉",
+        type: "good",
+        tags: ["good","night"],
+        body: `Each night, protects one player from being killed.
+        <ul>
+          <li>If the Murderer targets the protected player, they survive</li>
+          <li>Cannot block the Assassin's unblockable kill</li>
+          <li>Cannot protect the same person two nights in a row</li>
+          <li>Receives feedback: whether they actually saved someone or not</li>
+        </ul>`
+      },
+      {
+        title: "Detective",
+        icon: "🔍",
+        type: "good",
+        tags: ["good","night"],
+        body: `Each night, watches one player's house.
+        <ul>
+          <li>Learns if the target <strong>left their house</strong> (performed a night action)</li>
+          <li>Learns the names of anyone who <strong>visited</strong> the target's house</li>
+          <li>If no activity: receives "no activity" report</li>
+        </ul>
+        <strong>Starting clues:</strong> Detective receives one real clue and one fake clue, and is told which is which.`
+      },
+      {
+        title: "Judge",
+        icon: "⚖️",
+        type: "good",
+        tags: ["good","day"],
+        body: `Has one-time power to save someone from being voted out.
+        <ul>
+          <li>During voting, may choose to save one player from elimination</li>
+          <li>After voting, receives the full vote tally privately (who got how many votes)</li>
+          <li>One save for the entire game</li>
+        </ul>`
+      },
+      {
+        title: "Mayor",
+        icon: "🏛",
+        type: "good",
+        tags: ["good","day"],
+        body: `Has double voting power during day votes.
+        <ul>
+          <li>Mayor's vote counts as <strong>2 votes</strong></li>
+          <li>If the Mayor votes for someone who gets eliminated and that person is <strong>Good</strong>: Mayor's power drops to 1 vote for the next round</li>
+          <li>After voting, learns the alignment of any player they voted for who was eliminated</li>
+        </ul>`
+      },
+      {
+        title: "Psychic",
+        icon: "🔮",
+        type: "good",
+        tags: ["good","night"],
+        body: `Each night, chooses one player to receive a vision about.
+        <ul>
+          <li>Receives one <strong>true clue</strong> about that specific player</li>
+          <li>Clues are drawn from the standard clue templates (active at night, shy in discussions, etc.)</li>
+          <li>All clues received by the Psychic are true</li>
+        </ul>
+        Available at <strong>10+ players.</strong>`
+      },
+      {
+        title: "Medium",
+        icon: "👁",
+        type: "good",
+        tags: ["good","night"],
+        body: `Each night, contacts one dead player to learn their role.
+        <ul>
+          <li>Chooses any dead player from the list</li>
+          <li>Learns their exact role (e.g. "X was a Murderer")</li>
+          <li>Can contact a different dead player each night</li>
+        </ul>
+        Available at <strong>13+ players.</strong>`
+      },
+      {
+        title: "Coroner",
+        icon: "🏥",
+        type: "good",
+        tags: ["good","night"],
+        body: `Automatically receives cause of death reports, one night delayed.
+        <ul>
+          <li>If someone dies on Night 2, the Coroner learns their cause of death on Night 3</li>
+          <li>Cause of death options: Murdered, Assassinated, Vigilante kill, Failed vigilante attempt, Voted out, Jailed and murdered</li>
+          <li>No active night action required — info arrives automatically</li>
+        </ul>
+        Available at <strong>14+ players.</strong>`
+      },
+      {
+        title: "Jailor",
+        icon: "⛓",
+        type: "good",
+        tags: ["good","night"],
+        body: `Each night, locks one player in a cell — blocking their night action.
+        <ul>
+          <li>Jailed player's action has no effect; they receive "You were jailed" feedback</li>
+          <li><strong>Risk:</strong> If the Murderer or Assassin kills the jailed player that same night, the Jailor also dies</li>
+          <li>Jailor receives confirmation of a successful jail, and is notified if the jailed player was killed (and they died too)</li>
+          <li>Jailor does <strong>not</strong> learn the jailed player's role</li>
+        </ul>
+        Replaces Vigilante by default at <strong>12+ players.</strong>`
+      },
+      {
+        title: "Vigilante",
+        icon: "🏹",
+        type: "good",
+        tags: ["good","night"],
+        body: `Has one shot for the entire game. Choose wisely.
+        <ul>
+          <li>If target is <strong>Evil</strong>: target dies, Vigilante survives</li>
+          <li>If target is <strong>Good</strong>: Vigilante dies, target survives</li>
+          <li>Can choose to hold the shot and not use it any given night</li>
+        </ul>
+        Replaced by Jailor by default. Host can enable both at 16 players.`
+      },
+      {
+        title: "Civilian",
+        icon: "🧑",
+        type: "good",
+        tags: ["good"],
+        body: `No special ability. Wins by helping the Good team through discussion, voting, and social deduction.
+        <ul>
+          <li>No night action</li>
+          <li>No day action</li>
+          <li>Earns a bonus point for winning and surviving</li>
+        </ul>`
+      }
+    ]
+  },
+  {
+    section: "Clues",
+    tags: ["all"],
+    id: "clues",
+    cards: [
+      {
+        title: "Starting Clues",
+        icon: "📜",
+        type: "neutral",
+        tags: ["all"],
+        body: `Every player begins with <strong>two clues</strong>: one real, one fake.
+        <ul>
+          <li><strong>Exception:</strong> Detective receives one real and one fake, and is <em>told</em> which is which</li>
+          <li>All other players see only the clue text — no label indicating real or fake</li>
+        </ul>
+        Clue templates and what they indicate:
+        <ul>
+          <li>"...does not play a strong role" → Civilian</li>
+          <li>"...has knowledge useful in emergencies" → Doctor</li>
+          <li>"...has the power to change the outcome of a vote" → Judge</li>
+          <li>"...might have a reason to act in secret" → Evil or Detective</li>
+          <li>"...is more active at night" → Has a night action</li>
+          <li>"...has a deciding influence in discussions" → Mayor</li>
+          <li>"...is shy in discussions" → Not Mayor or Judge</li>
+          <li>"...keeps to themselves at night" → No night action (Civilian, Mayor, Judge, etc.)</li>
+          <li>"...is powerful during the day" → Mayor or Judge</li>
+        </ul>`
+      },
+      {
+        title: "Hidden Clues",
+        icon: "🔍",
+        type: "neutral",
+        tags: ["all"],
+        body: `Three additional true clues exist that can be discovered during the game.
+        <br><br>
+        <strong>Virtual mode:</strong> Each night, every living player has a <strong>1-in-10 chance</strong> of finding a clue. Maximum 3 total, no duplicates. Not expected to all be found every game.
+        <br><br>
+        <strong>Physical mode:</strong> The host gets 3 six-character codes. Write these on slips of paper and hide them around the location. Players enter a found code in their Journal tab to reveal the clue.
+        <br><br>
+        When a player finds a clue, they can choose to <strong>share it with the town</strong> — it then appears in everyone else's feedback log.`
+      }
+    ]
+  },
+  {
+    section: "Objectives",
+    tags: ["all"],
+    id: "objectives",
+    cards: [
+      {
+        title: "Objectives & Preferences",
+        icon: "🎯",
+        type: "neutral",
+        tags: ["all"],
+        body: `Each player is randomly assigned <strong>two likes</strong> and <strong>two dislikes</strong> from the preferences list (Cooking, Drama, Art, etc.).
+        <br><br>
+        Each player has <strong>three objectives</strong>:
+        <ul>
+          <li><strong>Objective 1:</strong> Find someone who likes [preference]</li>
+          <li><strong>Objective 2:</strong> Find someone who dislikes [preference]</li>
+          <li><strong>Objective 3:</strong> Have someone else identify you for their objective</li>
+        </ul>
+        Each completed objective is worth <strong>⅓ of a point</strong>, for a maximum of 1 bonus point from objectives.
+        <br><br>
+        To complete Objectives 1 and 2, tap the objective checkbox and select the player who fulfills it. This also automatically completes that player's Objective 3.`
+      }
+    ]
+  },
+  {
+    section: "Succession",
+    tags: ["evil","all"],
+    id: "succession",
+    cards: [
+      {
+        title: "Murderer Succession",
+        icon: "👑",
+        type: "evil",
+        tags: ["evil","all"],
+        body: `When the active Murderer dies, the kill ability passes to the next Evil player in the succession chain:
+        <ul>
+          <li>1st: <strong>Assassin</strong> (if alive) becomes the new Murderer</li>
+          <li>2nd: <strong>Spy</strong> (if alive) becomes the new Murderer</li>
+          <li>3rd: <strong>Witch</strong> (if alive) becomes the new Murderer</li>
+        </ul>
+        The new Murderer is shown as "Murderer" in the host panel but was originally another role. This means Evil can keep killing as long as someone in the chain is alive.`
+      }
+    ]
+  },
+  {
+    section: "Scoring",
+    tags: ["scoring"],
+    id: "scoring",
+    cards: [
+      {
+        title: "Points Overview",
+        icon: "🏆",
+        type: "neutral",
+        tags: ["scoring"],
+        body: `Points accumulate across multiple games in a session until the host ends the session.
+        <ul>
+          <li><strong>+1</strong> — Survived to the end</li>
+          <li><strong>+2</strong> — Won (Good team)</li>
+          <li><strong>+3</strong> — Won (Evil team)</li>
+          <li><strong>+1 per clue</strong> — Each hidden clue found</li>
+          <li><strong>+⅓ per objective</strong> — Up to +1 from objectives</li>
+        </ul>`
+      },
+      {
+        title: "Role Bonus Points",
+        icon: "⭐",
+        type: "neutral",
+        tags: ["scoring"],
+        body: `Max +1 bonus point per player. These do not stack — only the highest applies.
+        <ul>
+          <li><strong>Civilian:</strong> +1 if won and survived</li>
+          <li><strong>Murderer:</strong> +1 if won with both Murderer and Spy alive (or sole Evil in game)</li>
+          <li><strong>Spy:</strong> +1 if investigated someone leaving their house (Doctor or Detective)</li>
+          <li><strong>Doctor:</strong> +1 if successfully saved a player</li>
+          <li><strong>Detective:</strong> +1 if investigated a house the Murderer visited (or found Murderer/Spy leaving)</li>
+          <li><strong>Judge:</strong> +1 if saved an innocent (Good) player from being voted out</li>
+        </ul>`
+      }
+    ]
+  }
+];
+
+let currentFilter = 'all';
+let currentSearch = '';
+let collapsed = {};
+
+function setFilter(filter, btn) {
+  currentFilter = filter;
+  document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+  btn.classList.add('active');
+  render();
+}
+
+function filterRules() {
+  currentSearch = document.getElementById('search').value.toLowerCase().trim();
+  render();
+}
+
+function toggleSection(id) {
+  collapsed[id] = !collapsed[id];
+  render();
+}
+
+function highlight(text, query) {
+  if (!query) return text;
+  const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')})`, 'gi');
+  return text.replace(regex, '<span class="highlight">$1</span>');
+}
+
+function render() {
+  const container = document.getElementById('rules-content');
+  const query = currentSearch;
+  let totalVisible = 0;
+
+  let html = '';
+
+  RULES.forEach(section => {
+    // Filter by chip
+    if (currentFilter !== 'all' && !section.tags.includes(currentFilter)) return;
+
+    const visibleCards = section.cards.filter(card => {
+      if (currentFilter !== 'all' && !card.tags.includes(currentFilter)) return false;
+      if (!query) return true;
+      return card.title.toLowerCase().includes(query) || card.body.toLowerCase().includes(query);
+    });
+
+    if (visibleCards.length === 0) return;
+    totalVisible += visibleCards.length;
+
+    const isCollapsed = collapsed[section.id] && !query;
+
+    html += `<div class="section">
+      <div class="section-header" onclick="toggleSection('${section.id}')">
+        ${highlight(section.section, query)}
+        <span class="section-toggle">${isCollapsed ? '▼' : '▲'}</span>
+      </div>
+      <div class="section-body ${isCollapsed ? 'collapsed' : ''}">`;
+
+    visibleCards.forEach(card => {
+      const bodyHighlighted = query ? highlight(card.body, query) : card.body;
+      const titleHighlighted = query ? highlight(card.title, query) : card.title;
+      html += `<div class="rule-card ${card.type}-card">
+        <div class="rule-title">
+          <span class="rule-icon">${card.icon}</span>
+          ${titleHighlighted}
+          ${card.tags.includes('evil') ? '<span class="rule-tag tag-evil">EVIL</span>' : ''}
+          ${card.tags.includes('good') && !card.tags.includes('evil') ? '<span class="rule-tag tag-good">GOOD</span>' : ''}
+          ${card.tags.includes('night') ? '<span class="rule-tag tag-night">NIGHT</span>' : ''}
+          ${card.tags.includes('day') ? '<span class="rule-tag tag-day">DAY</span>' : ''}
+        </div>
+        <div class="rule-body">${bodyHighlighted}</div>
+      </div>`;
+    });
+
+    html += `</div></div>`;
+  });
+
+  if (totalVisible === 0) {
+    html = `<div class="no-results">No rules match "${currentSearch}"</div>`;
+  }
+
+  container.innerHTML = html;
+}
+
+render();
+</script>
+</body>
+</html>

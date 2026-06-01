@@ -1,0 +1,16 @@
+{
+  "name": "murder-mystery",
+  "version": "2.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "partykit dev",
+    "deploy": "partykit deploy",
+    "deploy:pages": "npx partykit deploy && echo 'Copy public/ to your GitHub Pages repo'"
+  },
+  "dependencies": {
+    "partykit": "^0.0.111"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}

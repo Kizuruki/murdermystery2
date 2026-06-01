@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Murder Mystery — Lobby</title>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@400;700&family=IM+Fell+English:ital@0;1&family=Cinzel:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:#0d0908;--surface:#160e0b;--surface2:#1f1411;
+    --gold:#c9a84c;--gold-dim:#7a6230;
+    --crimson:#7a1a1a;--crimson-bright:#c0392b;
+    --good:#2a5c3f;--good-bright:#3d8f5f;
+    --evil:#7a1a1a;
+    --text:#e8d9c0;--text-dim:#8a7560;
+    --border:#2e1f17;--border-gold:#3d2e18;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;background:var(--bg);color:var(--text);font-family:'IM Fell English',serif;}
+
+  body::before{content:'';position:fixed;inset:0;
+    background:radial-gradient(ellipse at 50% 0%,rgba(122,26,26,.12) 0%,transparent 60%),
+    radial-gradient(ellipse at 80% 100%,rgba(201,168,76,.05) 0%,transparent 50%);
+    pointer-events:none;z-index:0;}
+
+  .app{position:relative;z-index:1;max-width:480px;margin:0 auto;padding:1rem;min-height:100vh;}
+
+  /* Top bar */
+  .topbar{display:flex;align-items:center;justify-content:space-between;padding:0.75rem 0;margin-bottom:1rem;border-bottom:1px solid var(--border);}
+  .room-code{font-family:'Cinzel',serif;font-size:0.75rem;letter-spacing:0.15em;color:var(--gold);}
+  .room-code span{font-size:1.1rem;letter-spacing:0.3em;display:block;}
+  .copy-btn{background:transparent;border:1px solid var(--border-gold);border-radius:3px;padding:0.4rem 0.75rem;color:var(--gold);font-family:'Cinzel',serif;font-size:0.7rem;letter-spacing:0.1em;cursor:pointer;}
+  .copy-btn:active{opacity:0.7;}
+
+  /* Section */
+  .section{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:1.25rem;margin-bottom:1rem;position:relative;overflow:hidden;}
+  .section::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(to right,transparent,var(--gold-dim),transparent);}
+  .section-title{font-family:'Cinzel',serif;font-size:0.7rem;letter-spacing:0.2em;text-transform:uppercase;color:var(--gold);margin-bottom:1rem;}
+
+  /* Character grid */
+  .char-grid{display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;}
+  .char-btn{
+    background:var(--surface2);border:1px solid var(--border);border-radius:3px;
+    padding:0.65rem 0.75rem;text-align:left;cursor:pointer;transition:all 0.15s;
+    position:relative;
+  }
+  .char-btn.taken{opacity:0.35;pointer-events:none;}
+  .char-btn.selected{border-color:var(--gold);background:rgba(201,168,76,0.08);}
+  .char-btn.selected::after{content:'✓';position:absolute;top:0.4rem;right:0.5rem;color:var(--gold);font-size:0.8rem;}
+  .char-name{font-family:'Cinzel',serif;font-size:0.72rem;color:var(--text);line-height:1.3;}
+  .char-taken-by{font-size:0.7rem;color:var(--gold);font-style:italic;margin-top:0.2rem;}
+
+  /* Players list */
+  .player-list{display:flex;flex-direction:column;gap:0.5rem;}
+  .player-item{display:flex;align-items:center;gap:0.75rem;padding:0.6rem 0.75rem;background:var(--surface2);border-radius:3px;border:1px solid var(--border);}
+  .player-avatar{width:32px;height:32px;border-radius:50%;background:var(--crimson);display:flex;align-items:center;justify-content:center;font-family:'Cinzel',serif;font-size:0.8rem;flex-shrink:0;}
+  .player-info{flex:1;min-width:0;}
+  .player-name{font-family:'Cinzel',serif;font-size:0.8rem;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .player-char{font-size:0.75rem;color:var(--text-dim);font-style:italic;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .host-badge{font-size:0.65rem;background:rgba(201,168,76,0.15);border:1px solid var(--gold-dim);border-radius:2px;padding:0.15rem 0.4rem;color:var(--gold);font-family:'Cinzel',serif;letter-spacing:0.05em;}
+
+  /* Settings (host only) */
+  .setting-row{display:flex;align-items:center;justify-content:space-between;padding:0.6rem 0;border-bottom:1px solid var(--border);}
+  .setting-row:last-child{border-bottom:none;}
+  .setting-label{font-size:0.9rem;color:var(--text);}
+  .setting-sub{font-size:0.75rem;color:var(--text-dim);margin-top:0.15rem;}
+
+  /* Toggle */
+  .toggle{position:relative;width:44px;height:24px;flex-shrink:0;}
+  .toggle input{opacity:0;width:0;height:0;}
+  .toggle-slider{position:absolute;inset:0;background:var(--border);border-radius:12px;cursor:pointer;transition:0.2s;}
+  .toggle-slider:before{content:'';position:absolute;width:18px;height:18px;left:3px;bottom:3px;background:var(--text-dim);border-radius:50%;transition:0.2s;}
+  .toggle input:checked+.toggle-slider{background:var(--crimson);}
+  .toggle input:checked+.toggle-slider:before{transform:translateX(20px);background:var(--gold);}
+
+  /* Buttons */
+  .btn{width:100%;padding:0.9rem;border:1px solid var(--gold-dim);border-radius:3px;background:linear-gradient(135deg,var(--crimson),#5a1010);color:var(--text);font-family:'Cinzel',serif;font-size:0.85rem;letter-spacing:0.15em;text-transform:uppercase;cursor:pointer;transition:all 0.2s;-webkit-appearance:none;}
+  .btn:active{transform:scale(0.98);}
+  .btn:disabled{opacity:0.4;cursor:not-allowed;}
+  .btn-outline{background:transparent;border-color:var(--border);color:var(--text-dim);}
+
+  /* Wait message */
+  .wait-msg{text-align:center;color:var(--text-dim);font-style:italic;padding:1rem;font-size:0.9rem;}
+  .player-count{font-family:'Cinzel',serif;font-size:0.75rem;color:var(--text-dim);text-align:right;margin-bottom:0.5rem;}
+  .count-badge{display:inline-block;background:var(--crimson);border-radius:2px;padding:0.15rem 0.5rem;color:var(--gold);font-size:0.75rem;font-family:'Cinzel',serif;}
+
+  /* Notification */
+  .notif{position:fixed;top:1rem;left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--gold-dim);border-radius:3px;padding:0.6rem 1.25rem;font-family:'Cinzel',serif;font-size:0.8rem;color:var(--gold);z-index:999;pointer-events:none;opacity:0;transition:opacity 0.3s;white-space:nowrap;}
+  .notif.show{opacity:1;}
+
+  select{background:var(--surface2);border:1px solid var(--border);border-radius:3px;padding:0.4rem 0.6rem;color:var(--text);font-family:'IM Fell English',serif;font-size:0.85rem;outline:none;}
+  select:focus{border-color:var(--gold-dim);}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <div class="room-code">
+      ROOM CODE
+      <span id="room-code-display">——————</span>
+    </div>
+    <button class="copy-btn" onclick="copyCode()">Copy Code</button>
+  </div>
+
+  <!-- Character Selection -->
+  <div class="section">
+    <div class="section-title">Choose Your Character</div>
+    <div class="char-grid" id="char-grid">
+      <!-- populated by JS -->
+    </div>
+  </div>
+
+  <!-- Players in lobby -->
+  <div class="section">
+    <div class="player-count">Players: <span class="count-badge" id="player-count">0</span> / 16</div>
+    <div class="section-title">In the Room</div>
+    <div class="player-list" id="player-list">
+      <div class="wait-msg">Waiting for players to join...</div>
+    </div>
+  </div>
+
+  <!-- Host settings -->
+  <div class="section" id="settings-section" style="display:none">
+    <div class="section-title">Game Settings</div>
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Clue Mode</div>
+        <div class="setting-sub">Physical = paper codes to hide around room</div>
+      </div>
+      <select id="setting-clue-mode" onchange="updateSetting('clueMode', this.value)">
+        <option value="virtual">Virtual</option>
+        <option value="physical">Physical</option>
+      </select>
+    </div>
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Chat</div>
+        <div class="setting-sub">Global chat + DMs + evil team chat</div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="setting-chat" checked onchange="updateSetting('chatEnabled', this.checked)">
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Jailor</div>
+        <div class="setting-sub">Replaces Vigilante at 12+ players</div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="setting-jailor" checked onchange="updateSetting('jailorEnabled', this.checked)">
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Vigilante</div>
+        <div class="setting-sub">Both can be active at 16 players</div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="setting-vigilante" onchange="updateSetting('vigilanteEnabled', this.checked)">
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Day 1 Night Skip (7 players)</div>
+        <div class="setting-sub">Murderer + Spy skip Night 1</div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="setting-day1skip" checked onchange="updateSetting('day1NightSkip', this.checked)">
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+  </div>
+
+  <!-- Physical clue codes (host only, when physical mode) -->
+  <div class="section" id="clue-codes-section" style="display:none">
+    <div class="section-title">Hidden Clue Codes</div>
+    <p style="font-style:italic;font-size:0.85rem;color:var(--text-dim);margin-bottom:0.75rem;">Print or write these on paper and hide them around your location. Players enter the code in their journal to reveal the clue.</p>
+    <div id="clue-codes-list" style="display:flex;flex-direction:column;gap:0.5rem;"></div>
+  </div>
+
+  <!-- Action -->
+  <div id="host-controls" style="display:none">
+    <button class="btn" id="start-btn" onclick="startGame()" disabled>Start Game</button>
+  </div>
+  <div id="guest-wait" style="display:none">
+    <div class="wait-msg" id="wait-msg">Waiting for host to start...</div>
+    <button class="btn btn-outline" onclick="window.location.href='index.html'" style="margin-top:0.5rem;">Leave Room</button>
+  </div>
+</div>
+
+<div class="notif" id="notif"></div>
+
+<script>
+  const PARTYKIT_HOST = "murder-mystery.kizuruki.partykit.dev"; // ← replace
+
+  const CHARACTERS = [
+    {id:"1",name:"Lord/Lady Lochmara"},{id:"2",name:"Viscount/Viscountess Salem"},
+    {id:"3",name:"Count/Countess Red-Violet"},{id:"4",name:"Baron/Baroness Cerulean"},
+    {id:"5",name:"Prince/Princess Endeavour"},{id:"6",name:"Sir/Dame Robin"},
+    {id:"7",name:"Steward/Stewardess Sangria"},{id:"8",name:"Servant Ecstasy"},
+    {id:"9",name:"Prince Koamaru"},{id:"10",name:"Professor Haze"},
+    {id:"11",name:"Colonel Crimson"},{id:"12",name:"Dr. Mysin"},
+    {id:"13",name:"Duke/Duchess Scampi"},{id:"14",name:"Chaplain Atlantis"},
+    {id:"15",name:"Mister/Mistress Rose"},{id:"16",name:"Groundskeeper Lemon"}
+  ];
+
+  const params = new URLSearchParams(location.search);
+  const roomCode = params.get('room') || sessionStorage.getItem('mm_room_code') || '';
+  const isHost = params.has('host') || sessionStorage.getItem('mm_is_host') === 'true';
+  const nickname = sessionStorage.getItem('mm_nickname') || 'Guest';
+  let myId = null;
+  let ws = null;
+  let gameState = null;
+  let selectedChar = null;
+
+  document.getElementById('room-code-display').textContent = roomCode;
+  if (isHost) {
+    document.getElementById('settings-section').style.display = 'block';
+    document.getElementById('host-controls').style.display = 'block';
+  } else {
+    document.getElementById('guest-wait').style.display = 'block';
+  }
+
+  function copyCode() {
+    navigator.clipboard.writeText(roomCode).then(() => showNotif('Code copied!')).catch(() => {});
+  }
+
+  function showNotif(msg) {
+    const el = document.getElementById('notif');
+    el.textContent = msg;
+    el.classList.add('show');
+    setTimeout(() => el.classList.remove('show'), 2000);
+  }
+
+  // Build character grid
+  function renderCharGrid() {
+    const grid = document.getElementById('char-grid');
+    grid.innerHTML = '';
+    CHARACTERS.forEach(char => {
+      const btn = document.createElement('button');
+      btn.className = 'char-btn';
+      btn.dataset.id = char.id;
+
+      // Check if taken
+      const taker = gameState ? Object.values(gameState.players).find(p => p.name === char.name) : null;
+      if (taker) {
+        if (taker.id === myId) {
+          btn.classList.add('selected');
+        } else {
+          btn.classList.add('taken');
+        }
+      }
+      btn.innerHTML = `<div class="char-name">${char.name}</div>${taker && taker.id !== myId ? `<div class="char-taken-by">${taker.nickname}</div>` : ''}`;
+      btn.onclick = () => selectCharacter(char.id);
+      grid.appendChild(btn);
+    });
+  }
+
+  function selectCharacter(charId) {
+    selectedChar = charId;
+    renderCharGrid();
+    if (ws) {
+      ws.send(JSON.stringify({ type: 'join', characterId: charId, nickname }));
+    }
+  }
+
+  function renderPlayers() {
+    if (!gameState) return;
+    const list = document.getElementById('player-list');
+    const players = Object.values(gameState.players);
+    document.getElementById('player-count').textContent = players.length;
+
+    if (players.length === 0) {
+      list.innerHTML = '<div class="wait-msg">Waiting for players to join...</div>';
+      return;
+    }
+
+    list.innerHTML = '';
+    players.forEach(p => {
+      const div = document.createElement('div');
+      div.className = 'player-item';
+      const initials = (p.nickname || p.name).slice(0,2).toUpperCase();
+      const isMe = p.id === myId;
+      div.innerHTML = `
+        <div class="player-avatar">${initials}</div>
+        <div class="player-info">
+          <div class="player-name">${p.nickname}${isMe ? ' (you)' : ''}</div>
+          <div class="player-char">${p.name || 'Choosing character...'}</div>
+        </div>
+        ${p.id === gameState.hostId ? '<span class="host-badge">HOST</span>' : ''}
+        ${!p.connected ? '<span style="color:var(--text-dim);font-size:0.7rem;">⚠ disconnected</span>' : ''}
+      `;
+      list.appendChild(div);
+    });
+
+    // Update start button
+    if (isHost) {
+      const startBtn = document.getElementById('start-btn');
+      const count = players.length;
+      const allChosen = players.every(p => p.name);
+      startBtn.disabled = count < 6 || count > 16 || !allChosen;
+      startBtn.textContent = count < 6 ? `Start Game (need ${6 - count} more)` : 'Start Game';
+    }
+  }
+
+  function updateSetting(key, value) {
+    if (ws) ws.send(JSON.stringify({ type: 'host_configure', settings: { [key]: value } }));
+    if (key === 'clueMode') {
+      document.getElementById('clue-codes-section').style.display = value === 'physical' ? 'block' : 'none';
+    }
+  }
+
+  function startGame() {
+    if (ws) ws.send(JSON.stringify({ type: 'host_start_game' }));
+  }
+
+  // WebSocket
+  function connect() {
+    const url = `wss://${PARTYKIT_HOST}/party/${roomCode.toLowerCase()}`;
+    ws = new WebSocket(url);
+
+    ws.onopen = () => {
+      // Auto-join if we had a character selected
+      if (selectedChar) {
+        ws.send(JSON.stringify({ type: 'join', characterId: selectedChar, nickname }));
+      }
+    };
+
+    ws.onmessage = (e) => {
+      const msg = JSON.parse(e.data);
+      handleMessage(msg);
+    };
+
+    ws.onclose = () => {
+      setTimeout(connect, 2000);
+    };
+
+    ws.onerror = () => ws.close();
+  }
+
+  function handleMessage(msg) {
+    switch (msg.type) {
+      case 'room_created':
+        myId = null; // will be set by state_update
+        break;
+      case 'room_exists':
+        break;
+      case 'state_update':
+        myId = msg.myId;
+        gameState = msg;
+
+        // If game has started, go to game page
+        if (msg.phase !== 'lobby') {
+          sessionStorage.setItem('mm_game_state', JSON.stringify(msg));
+          window.location.href = 'game.html?room=' + roomCode;
+          return;
+        }
+
+        renderCharGrid();
+        renderPlayers();
+
+        // Update settings UI (host)
+        if (isHost && msg.settings) {
+          document.getElementById('setting-clue-mode').value = msg.settings.clueMode;
+          document.getElementById('setting-chat').checked = msg.settings.chatEnabled;
+          document.getElementById('setting-jailor').checked = msg.settings.jailorEnabled;
+          document.getElementById('setting-vigilante').checked = msg.settings.vigilanteEnabled;
+          document.getElementById('setting-day1skip').checked = msg.settings.day1NightSkip;
+
+          if (msg.settings.clueMode === 'physical' && msg.hiddenClues) {
+            document.getElementById('clue-codes-section').style.display = 'block';
+            const list = document.getElementById('clue-codes-list');
+            list.innerHTML = msg.hiddenClues.map(c => `
+              <div style="background:var(--surface2);border:1px solid var(--border);border-radius:3px;padding:0.75rem;display:flex;justify-content:space-between;align-items:center;">
+                <div>
+                  <div style="font-family:'Cinzel',serif;font-size:1rem;letter-spacing:0.3em;color:var(--gold)">${c.code}</div>
+                  <div style="font-size:0.75rem;color:var(--text-dim);margin-top:0.25rem;">${c.text}</div>
+                </div>
+                <div style="font-size:0.75rem;color:${c.found ? 'var(--good-bright)' : 'var(--text-dim)'}">
+                  ${c.found ? '✓ Found' : 'Hidden'}
+                </div>
+              </div>
+            `).join('');
+          }
+        }
+        break;
+
+      case 'error':
+        showNotif('⚠ ' + msg.message);
+        break;
+    }
+  }
+
+  connect();
+  renderCharGrid();
+</script>
+</body>
+</html>
