@@ -8,7 +8,7 @@
     "deploy:pages": "npx partykit deploy && echo 'Copy public/ to your GitHub Pages repo'"
   },
   "dependencies": {
-    "partykit": "^0.0.111"
+    "partykit": "^0.0.115"
   },
   "devDependencies": {
     "typescript": "^5.0.0"

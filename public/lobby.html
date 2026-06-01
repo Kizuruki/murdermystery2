@@ -194,7 +194,8 @@
 <div class="notif" id="notif"></div>
 
 <script>
-  const PARTYKIT_HOST = "murder-mystery.kizuruki.partykit.dev"; // ← replace
+  console.log('[MM] script loaded');
+  const PARTYKIT_HOST = "localhost:1999"; // ← replace
 
   const CHARACTERS = [
     {id:"1",name:"Lord/Lady Lochmara"},{id:"2",name:"Viscount/Viscountess Salem"},
@@ -259,13 +260,20 @@
     });
   }
 
-  function selectCharacter(charId) {
-    selectedChar = charId;
-    renderCharGrid();
-    if (ws) {
-      ws.send(JSON.stringify({ type: 'join', characterId: charId, nickname }));
+    function safeSend(msg) {
+      if (!ws) return;
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify(msg));
+      } else if (ws.readyState === WebSocket.CONNECTING) {
+        ws.addEventListener('open', () => ws.send(JSON.stringify(msg)), { once: true });
+      }
     }
-  }
+
+      function selectCharacter(charId) {
+        selectedChar = charId;
+        renderCharGrid();
+        safeSend({ type: 'join', characterId: charId, nickname });
+      }
 
   function renderPlayers() {
     if (!gameState) return;
@@ -301,28 +309,31 @@
       const startBtn = document.getElementById('start-btn');
       const count = players.length;
       const allChosen = players.every(p => p.name);
-      startBtn.disabled = count < 6 || count > 16 || !allChosen;
-      startBtn.textContent = count < 6 ? `Start Game (need ${6 - count} more)` : 'Start Game';
+      startBtn.disabled = count < 1 || count > 16 || !allChosen;
+      startBtn.textContent = 'Start Game';
     }
   }
 
   function updateSetting(key, value) {
-    if (ws) ws.send(JSON.stringify({ type: 'host_configure', settings: { [key]: value } }));
+    safeSend({ type: 'host_configure', settings: { [key]: value } });
     if (key === 'clueMode') {
       document.getElementById('clue-codes-section').style.display = value === 'physical' ? 'block' : 'none';
     }
   }
 
-  function startGame() {
-    if (ws) ws.send(JSON.stringify({ type: 'host_start_game' }));
-  }
+    function startGame() {
+        console.log('[MM] startGame called, ws state:', ws?.readyState);
+        if (ws) ws.send(JSON.stringify({ type: 'host_start_game' }));
+    }
 
   // WebSocket
   function connect() {
-    const url = `wss://${PARTYKIT_HOST}/party/${roomCode.toLowerCase()}`;
+    const protocol = PARTYKIT_HOST.startsWith('localhost') ? 'ws' : 'wss';
+    const url = `${PARTYKIT_HOST.startsWith('localhost') ? 'ws' : 'wss'}://${PARTYKIT_HOST}/party/${roomCode.toLowerCase()}`;
     ws = new WebSocket(url);
 
     ws.onopen = () => {
+          console.log('[MM] WebSocket connected!');
       // Auto-join if we had a character selected
       if (selectedChar) {
         ws.send(JSON.stringify({ type: 'join', characterId: selectedChar, nickname }));
@@ -334,46 +345,44 @@
       handleMessage(msg);
     };
 
-    ws.onclose = () => {
+    ws.onclose = (e) => { console.log('[MM] WebSocket closed, code:', e.code, 'reason:', e.reason);
       setTimeout(connect, 2000);
     };
 
-    ws.onerror = () => ws.close();
+    ws.onerror = (e) => { console.log('[MM] WebSocket error:', e); ws.close(); };
   }
 
-  function handleMessage(msg) {
-    switch (msg.type) {
-      case 'room_created':
-        myId = null; // will be set by state_update
-        break;
-      case 'room_exists':
-        break;
-      case 'state_update':
-        myId = msg.myId;
-        gameState = msg;
+    function handleMessage(msg) {
+        console.log('[MM] message received:', msg.type, msg);
+        switch (msg.type) {
+            case 'room_created':
+                break;
+            case 'room_exists':
+                break;
+            case 'state_update':
+                myId = msg.myId;
+                gameState = msg;
 
-        // If game has started, go to game page
-        if (msg.phase !== 'lobby') {
-          sessionStorage.setItem('mm_game_state', JSON.stringify(msg));
-          window.location.href = 'game.html?room=' + roomCode;
-          return;
-        }
+                if (msg.phase !== 'lobby') {
+                    sessionStorage.setItem('mm_game_state', JSON.stringify(msg));
+                    window.location.href = 'game.html?room=' + roomCode;
+                    return;
+                }
 
-        renderCharGrid();
-        renderPlayers();
+                renderCharGrid();
+                renderPlayers();
 
-        // Update settings UI (host)
-        if (isHost && msg.settings) {
-          document.getElementById('setting-clue-mode').value = msg.settings.clueMode;
-          document.getElementById('setting-chat').checked = msg.settings.chatEnabled;
-          document.getElementById('setting-jailor').checked = msg.settings.jailorEnabled;
-          document.getElementById('setting-vigilante').checked = msg.settings.vigilanteEnabled;
-          document.getElementById('setting-day1skip').checked = msg.settings.day1NightSkip;
+                if (isHost && msg.settings) {
+                    document.getElementById('setting-clue-mode').value = msg.settings.clueMode;
+                    document.getElementById('setting-chat').checked = msg.settings.chatEnabled;
+                    document.getElementById('setting-jailor').checked = msg.settings.jailorEnabled;
+                    document.getElementById('setting-vigilante').checked = msg.settings.vigilanteEnabled;
+                    document.getElementById('setting-day1skip').checked = msg.settings.day1NightSkip;
 
-          if (msg.settings.clueMode === 'physical' && msg.hiddenClues) {
-            document.getElementById('clue-codes-section').style.display = 'block';
-            const list = document.getElementById('clue-codes-list');
-            list.innerHTML = msg.hiddenClues.map(c => `
+                    if (msg.settings.clueMode === 'physical' && msg.hiddenClues) {
+                        document.getElementById('clue-codes-section').style.display = 'block';
+                        const list = document.getElementById('clue-codes-list');
+                        list.innerHTML = msg.hiddenClues.map(c => `
               <div style="background:var(--surface2);border:1px solid var(--border);border-radius:3px;padding:0.75rem;display:flex;justify-content:space-between;align-items:center;">
                 <div>
                   <div style="font-family:'Cinzel',serif;font-size:1rem;letter-spacing:0.3em;color:var(--gold)">${c.code}</div>
@@ -384,18 +393,22 @@
                 </div>
               </div>
             `).join('');
-          }
+                    }
+                }
+                break;
+
+            case 'error':
+                showNotif('⚠ ' + msg.message);
+                break;
+
+            default:
+                console.log('[MM] unhandled message type:', msg.type);
         }
-        break;
-
-      case 'error':
-        showNotif('⚠ ' + msg.message);
-        break;
     }
-  }
 
-  connect();
-  renderCharGrid();
+    console.log('[MM] roomCode:', roomCode, 'isHost:', isHost, 'nickname:', nickname);
+    connect();
+    renderCharGrid();
 </script>
 </body>
 </html>
