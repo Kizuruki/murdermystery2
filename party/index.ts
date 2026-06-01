@@ -43,9 +43,11 @@ interface Player {
     nickname: string;
     role: Role;
     originalRole: Role;
+    objectiveSelections: [string | null, string | null];
     alignment: Alignment;
     alive: boolean;
     connected: boolean;
+    jailedHistory: string[];
     likes: string[];
     dislikes: string[];
     startingClues: Clue[];
@@ -69,6 +71,16 @@ interface Player {
     doctorLastSaved: string | null;
     cumulativePoints: number;
     roundPoints: number;
+    bonusPointEarned: boolean; // tracks if role bonus already awarded
+    spyDiscoveredLeaving: boolean;
+    detectiveFoundMurdererVisit: boolean;
+    psychicFoundEvil: boolean;
+    witchMimicsUsed: number;
+    assassinKilled: boolean;
+    vigilanteKilledEvil: boolean;
+    mediumFoundEvil: boolean;
+    coronerUniqueCauses: string[];
+    jailorPrevented: boolean;
 }
 
 interface NightAction {
@@ -409,6 +421,7 @@ function resolveNight(state: GameState): NightResult {
             result.killed.push(target.id);
             result.deathEntries.push({ round: state.round, playerName: target.name, cause: "Vigilante kill" });
             result.feedbacks[vigilante.id].push(`You shot ${target.name}. They were Evil. You survived.`);
+            vigilante.vigilanteKilledEvil = true;
         } else {
             result.killed.push(vigilante.id);
             result.deathEntries.push({ round: state.round, playerName: vigilante.name, cause: "Failed vigilante attempt" });
@@ -421,6 +434,7 @@ function resolveNight(state: GameState): NightResult {
     if (assassin && !assassin.assassinUsed && actions[assassin.id]?.targetId && !isJailed(assassin.id)) {
         const target = get(actions[assassin.id].targetId!);
         assassin.assassinUsed = true;
+        assassin.assassinKilled = true;
         if (!result.killed.includes(target.id)) {
             result.killed.push(target.id);
             result.deathEntries.push({ round: state.round, playerName: target.name, cause: "Assassinated" });
@@ -437,7 +451,7 @@ function resolveNight(state: GameState): NightResult {
     const skip7 = state.settings.day1NightSkip && state.round === 1 && players.length === 7;
     if (murderer && !isJailed(murderer.id) && !skip7 && actions[murderer.id]?.targetId) {
         const target = get(actions[murderer.id].targetId!);
-        const doctorSaved = doctor && !isJailed(doctor.id) && actions[doctor.id]?.targetId === target.id;
+        const doctorSaved = doctor && !isJailed(doctor.id) && actions[doctor.id]?.targetId === target.id && doctor.doctorLastSaved !== target.id;
         const witchDoctorSaved = witch && witch.witchCurrentMimic === "Doctor" && !isJailed(witch.id) && actions[witch.id]?.targetId === target.id;
 
         if (!doctorSaved && !witchDoctorSaved && !result.killed.includes(target.id)) {
@@ -452,16 +466,25 @@ function resolveNight(state: GameState): NightResult {
         if (doctor && doctorSaved) {
             doctor.doctorLastSaved = target.id;
             result.feedbacks[doctor.id].push(`You provided critical care to ${target.name} and saved their life last night.`);
+            result.feedbacks[target.id].push(`Your life was in danger last night, but someone saved you.`);
             result.saved.push(target.id);
         } else if (doctor && actions[doctor.id]?.targetId) {
             const docTarget = get(actions[doctor.id].targetId!);
             doctor.doctorLastSaved = actions[doctor.id].targetId;
             result.feedbacks[doctor.id].push(`${docTarget.name} did not require assistance last night.`);
         }
-    } else if (doctor && actions[doctor.id]?.targetId) {
+    }
+    // Jailor bonus: murderer was jailed and would have killed
+    if (jailor && jailedPlayerId && murderer && jailedPlayerId === murderer.id && actions[murderer.id]?.targetId) {
+        jailor.jailorPrevented = true;
+    }
+    // Doctor feedback when murderer didn't act or was jailed
+    if (doctor && actions[doctor.id]?.targetId && !result.saved.includes(actions[doctor.id].targetId!)) {
         const docTarget = get(actions[doctor.id].targetId!);
-        doctor.doctorLastSaved = actions[doctor.id].targetId;
-        result.feedbacks[doctor.id].push(`${docTarget.name} did not require assistance last night.`);
+        if (!doctor.doctorLastSaved || doctor.doctorLastSaved !== docTarget.id) {
+            doctor.doctorLastSaved = actions[doctor.id].targetId;
+            result.feedbacks[doctor.id].push(`${docTarget.name} did not require assistance last night.`);
+        }
     }
 
     // Spy
@@ -470,6 +493,11 @@ function resolveNight(state: GameState): NightResult {
         const targetAction = actions[target.id];
         if (targetAction?.targetId) {
             result.feedbacks[spy.id].push(`${target.name} visited ${get(targetAction.targetId).name} last night.`);
+            // Spy bonus: discovered Doctor or Detective leaving
+            const visitedRole = get(targetAction.targetId).role;
+            if (["Doctor", "Detective"].includes(target.role) || ["Doctor", "Detective"].includes(visitedRole)) {
+                spy.spyDiscoveredLeaving = true;
+            }
         } else {
             result.feedbacks[spy.id].push(`${target.name} did not leave their house last night.`);
         }
@@ -488,6 +516,13 @@ function resolveNight(state: GameState): NightResult {
             result.feedbacks[detective.id].push(`${watched.name} left their house last night.`);
         } else {
             result.feedbacks[detective.id].push(`There was no activity at ${watched.name}'s house last night.`);
+        }
+        if (murderer) {
+            const murdererAction = actions[murderer.id];
+            if (murdererAction?.targetId === watchedId) detective.detectiveFoundMurdererVisit = true;
+            if (watchedId === murderer.id && leftHouse) detective.detectiveFoundMurdererVisit = true;
+            const spyPlayer = getByRole("Spy");
+            if (spyPlayer && watchedId === spyPlayer.id && leftHouse) detective.detectiveFoundMurdererVisit = true;
         }
     }
 
@@ -533,29 +568,38 @@ function resolveNight(state: GameState): NightResult {
         const target = get(actions[psychic.id].targetId!);
         const usedTexts = new Set<string>([...target.startingClues.map(c => c.text), ...target.discoveredClues]);
         const clue = generatePsychicClue(target, alive, usedTexts);
-        if (clue) result.feedbacks[psychic.id].push(`Psychic vision about ${target.name}: ${clue}`);
+        if (clue) {
+            result.feedbacks[psychic.id].push(`Psychic vision about ${target.name}: ${clue}`);
+            if (EVIL_ROLES.includes(target.role)) psychic.psychicFoundEvil = true;
+        }
     }
 
     // Medium
     if (medium && !isJailed(medium.id) && actions[medium.id]?.targetId) {
         const target = get(actions[medium.id].targetId!);
         result.feedbacks[medium.id].push(`You sensed that ${target.name} was a ${target.role}.`);
+        if (EVIL_ROLES.includes(target.role)) medium.mediumFoundEvil = true;
     }
 
-    // Coroner
+    // Coroner gets same-night deaths
     if (coroner && !isJailed(coroner.id)) {
-        const prevDeaths = state.deathLog.filter(d => d.round === state.round - 1);
-        result.feedbacks[coroner.id].push(prevDeaths.length > 0
-            ? `Cause of death report: ${prevDeaths.map(d => `${d.playerName} — ${d.cause}`).join("; ")}.`
-            : `No deaths to report from the previous night.`);
+        // Will be filled after deaths are finalized — handled post-resolve
     }
 
     // Jailor feedback
     if (jailor && jailedPlayerId) {
+        jailor.jailedHistory.push(jailedPlayerId);
+        const jailedPlayer = get(jailedPlayerId);
         if (result.jailorDied === jailor.id) {
-            result.feedbacks[jailor.id].push(`You jailed ${get(jailedPlayerId).name}, but they were killed — and you perished with them.`);
+            result.feedbacks[jailor.id].push(`You jailed ${jailedPlayer.name}, but they were killed — and you perished with them.`);
         } else {
-            result.feedbacks[jailor.id].push(`You successfully jailed ${get(jailedPlayerId).name} last night.`);
+            const jailedHadAction = state.nightActionsExpected.includes(jailedPlayerId);
+            const jailedActed = state.nightActions[jailedPlayerId]?.targetId != null;
+            if (!jailedHadAction || !jailedActed) {
+                result.feedbacks[jailor.id].push(`You successfully jailed ${jailedPlayer.name} last night. They did not act.`);
+            } else {
+                result.feedbacks[jailor.id].push(`You successfully jailed ${jailedPlayer.name} last night. Their action was prevented.`);
+            }
         }
     }
     if (jailedPlayerId) {
@@ -596,6 +640,10 @@ function resolveNight(state: GameState): NightResult {
     // Update Witch mimic
     if (witch) {
         witch.witchCurrentMimic = witch.witchNextMimic;
+        // Count mimic uses: if witch had a current mimic and generated feedback this night, count it
+        if (witch.witchCurrentMimic && result.feedbacks[witch.id]?.some(f => f.startsWith('[As'))) {
+            witch.witchMimicsUsed = (witch.witchMimicsUsed || 0) + 1;
+        }
         const nextMimicAction = actions[witch.id]?.secondaryTargetId as Role | null;
         if (nextMimicAction && !witch.witchMimicHistory.includes(nextMimicAction)) {
             witch.witchNextMimic = nextMimicAction as Role;
@@ -606,6 +654,78 @@ function resolveNight(state: GameState): NightResult {
     return result;
 }
 
+function calculateFinalScores(state: GameState): void {
+    const players = Object.values(state.players);
+    const winner = state.winner;
+    const allEvil = players.filter(p => EVIL_ROLES.includes(p.originalRole));
+    const allEvilAlive = allEvil.every(p => p.alive);
+
+    players.forEach(p => {
+        let points = 0;
+
+        // Clues found
+        points += p.discoveredClues.length;
+
+        // Survival
+        if (p.alive) points += 1;
+
+        // Winning team bonus
+        if (p.alignment === "Good" && winner === "Good") points += 3;
+        if (p.alignment === "Evil" && winner === "Evil") points += 4;
+
+        // Role bonus (max +1, no stacking)
+        let roleBonus = 0;
+        const role = p.originalRole;
+        if (role === "Civilian" && p.alive && winner === "Good") roleBonus = 1;
+        if (role === "Murderer" && winner === "Evil" && allEvilAlive) roleBonus = 1;
+        if (role === "Spy" && p.spyDiscoveredLeaving) roleBonus = 1;
+        if (role === "Detective" && p.detectiveFoundMurdererVisit) roleBonus = 1;
+        if (role === "Judge" && p.judgeUsedOn.includes("__good_save__")) roleBonus = 1;
+        if (role === "Doctor" && p.doctorLastSaved) roleBonus = 1;
+        if (role === "Assassin" && p.assassinKilled) roleBonus = 1;
+        if (role === "Witch" && (p.witchMimicsUsed || 0) >= 2) roleBonus = 1;
+        if (role === "Psychic" && p.psychicFoundEvil) roleBonus = 1;
+        if (role === "Vigilante" && p.vigilanteKilledEvil) roleBonus = 1;
+        if (role === "Medium" && p.mediumFoundEvil) roleBonus = 1;
+        if (role === "Coroner" && (p.coronerUniqueCauses || []).length >= 3) roleBonus = 1;
+        if (role === "Jailor" && p.jailorPrevented) roleBonus = 1;
+        points += Math.min(roleBonus, 1);
+
+        // Mini objectives — auto-verify at end
+        const sel = p.objectiveSelections || [null, null];
+        let objPoints = 0;
+        if (sel[0]) {
+            const target = state.players[sel[0]];
+            const likeMatch = (p.objectives[0] || '').match(/likes (.+)\./);
+            if (target && likeMatch && (target.likes || []).includes(likeMatch[1])) {
+                p.objectivesCompleted[0] = true;
+                objPoints += 1 / 3;
+                // Award obj 3 to target
+                if (!target.objectivesCompleted[2]) {
+                    target.objectivesCompleted[2] = true;
+                    target.cumulativePoints += 1 / 3;
+                    target.roundPoints = (target.roundPoints || 0) + 1 / 3;
+                }
+            }
+        }
+        if (sel[1]) {
+            const target = state.players[sel[1]];
+            const dislikeMatch = (p.objectives[1] || '').match(/dislikes (.+)\./);
+            if (target && dislikeMatch && (target.dislikes || []).includes(dislikeMatch[1])) {
+                p.objectivesCompleted[1] = true;
+                objPoints += 1 / 3;
+                if (!target.objectivesCompleted[2]) {
+                    target.objectivesCompleted[2] = true;
+                    target.cumulativePoints += 1 / 3;
+                    target.roundPoints = (target.roundPoints || 0) + 1 / 3;
+                }
+            }
+        }
+        points += objPoints;
+        p.roundPoints = points;
+        p.cumulativePoints += points;
+    });
+}
 function checkSuccession(state: GameState): void {
     const aliveMurderers = Object.values(state.players).filter(p => p.alive && (p.originalRole === "Murderer" || p.role === "Murderer"));
     if (aliveMurderers.length > 0) return;
@@ -637,6 +757,8 @@ type ClientMessage =
     | { type: "night_action"; targetId: string | null; secondaryTargetId?: string | null }
     | { type: "submit_vote"; targetId: string | null }
     | { type: "judge_save"; targetId: string | null }
+    | { type: "host_new_game"; keepPoints: boolean }
+    | { type: "host_end_session" }
     | { type: "chat_message"; to: string; text: string }
     | { type: "update_notes"; notes: string }
     | { type: "update_tracker"; targetId: string; mark: "circle" | "x" | "none" }
@@ -645,7 +767,8 @@ type ClientMessage =
     | { type: "share_clue"; clueText: string }
     | { type: "objective_complete"; objectiveIndex: number; targetPlayerId: string }
     | { type: "request_state" }
-    | { type: "timer_tick" }; // NEW: client-driven timer advancement
+    | { type: "timer_tick" } // NEW: client-driven timer advancement
+    | { type: "update_objective_selection"; objectiveIndex: number; targetPlayerId: string | null };
 
 // ─── Server ───────────────────────────────────────────────────────────────────
 
@@ -700,6 +823,15 @@ export default class MurderMysteryServer implements Party.Server {
                     this.advancePhase();
                 }
                 return;
+            }
+
+            case "update_objective_selection": {
+                const p = state.players[sender.id];
+                if (!p || !p.alive) return; // dead can't change
+                if (msg.objectiveIndex < 0 || msg.objectiveIndex > 1) return;
+                p.objectiveSelections[msg.objectiveIndex] = msg.targetPlayerId;
+                sender.send(JSON.stringify({ type: "selection_updated" }));
+                break;
             }
 
             case "join": {
@@ -806,7 +938,7 @@ export default class MurderMysteryServer implements Party.Server {
                     state.deathLog.push({ round: state.round, playerName: p.name, cause: "Voted out" });
                     checkSuccession(state);
                     const winner = checkWinCondition(state);
-                    if (winner) { state.winner = winner; state.gameOver = true; state.phase = "game_over"; }
+                    if (winner) { state.winner = winner; state.gameOver = true; state.phase = "game_over"; calculateFinalScores(state); }
                     this.broadcastState();
                 }
                 break;
@@ -934,6 +1066,28 @@ export default class MurderMysteryServer implements Party.Server {
                 this.sendPrivateState(sender.id);
                 break;
             }
+
+            case "host_new_game": {
+                if (!isHost) return;
+                const keepPoints = msg.keepPoints;
+                const oldPlayers = Object.values(state.players);
+                const newState = this.createInitialState(state.hostId, state.roomCode);
+                // Re-add players with same characters
+                oldPlayers.forEach(p => {
+                    newState.players[p.id] = this.createPlayer(p.id, p.name, p.nickname);
+                    if (keepPoints) newState.players[p.id].cumulativePoints = p.cumulativePoints;
+                });
+                const roomCodeToSend = state.roomCode;
+                this.state = newState;
+                this.broadcast({ type: "redirect_lobby", roomCode: roomCodeToSend });
+                break;
+            }
+
+            case "host_end_session": {
+                if (!isHost) return;
+                this.broadcast({ type: "session_ended" });
+                break;
+            }
         }
     }
 
@@ -1029,6 +1183,20 @@ export default class MurderMysteryServer implements Party.Server {
         const result = resolveNight(state);
         result.killed.forEach(id => { const p = state.players[id]; if (p) p.alive = false; });
         state.deathLog.push(...result.deathEntries);
+        // Coroner same-night feedback
+        const coroner = Object.values(state.players).find(p => p.role === "Coroner" && p.alive);
+        if (coroner) {
+            if (result.deathEntries.length > 0) {
+                result.deathEntries.forEach(d => {
+                    if (!coroner.coronerUniqueCauses.includes(d.cause)) {
+                        coroner.coronerUniqueCauses.push(d.cause);
+                    }
+                });
+                coroner.feedbackLog.push({ round: state.round, phase: "night", text: `Cause of death report: ${result.deathEntries.map(d => `${d.playerName} — ${d.cause}`).join("; ")}.` });
+            } else {
+                coroner.feedbackLog.push({ round: state.round, phase: "night", text: `No deaths to report this night.` });
+            }
+        }
         Object.entries(result.feedbacks).forEach(([pid, msgs]) => {
             const p = state.players[pid];
             if (!p) return;
@@ -1041,6 +1209,7 @@ export default class MurderMysteryServer implements Party.Server {
             state.winner = winner;
             state.gameOver = true;
             state.phase = "game_over";
+            calculateFinalScores(state);
             this.broadcastState();
             return;
         }
@@ -1071,7 +1240,11 @@ export default class MurderMysteryServer implements Party.Server {
                 judge.judgeUsesLeft--;
                 judge.judgeUsedOn.push(savedId);
                 const savedPlayer = state.players[savedId];
-                if (savedPlayer) judge.feedbackLog.push({ round: state.round, phase: "day", text: `You saved ${savedPlayer.name} from elimination. They were ${savedPlayer.alignment}.` });
+                if (savedPlayer) {
+                    judge.feedbackLog.push({ round: state.round, phase: "day", text: `You saved ${savedPlayer.name} from elimination.` });
+                    // Track if saved player was Good for bonus point at end
+                    if (savedPlayer.alignment === "Good") judge.judgeUsedOn.push("__good_save__");
+                }
             }
             this.proceedToNight();
             return;
@@ -1101,6 +1274,7 @@ export default class MurderMysteryServer implements Party.Server {
             state.winner = winner;
             state.gameOver = true;
             state.phase = "game_over";
+            calculateFinalScores(state);
             this.broadcastState();
             return;
         }
@@ -1124,8 +1298,9 @@ export default class MurderMysteryServer implements Party.Server {
 
     createPlayerView(viewerId: string): object {
         const state = this.state!;
-        const viewer = state.players[viewerId];
         const isHost = viewerId === state.hostId;
+        const viewer = state.players[viewerId];
+        if (!viewer && !isHost) return { type: "error", message: "Player not found" };
 
         const players: Record<string, object> = {};
         Object.values(state.players).forEach(p => {
@@ -1138,18 +1313,23 @@ export default class MurderMysteryServer implements Party.Server {
                 nickname: p.nickname,
                 alive: p.alive,
                 connected: p.connected,
-                role: canSeeRole ? p.role : undefined,
-                originalRole: canSeeRole ? p.originalRole : undefined,
-                alignment: canSeeRole ? p.alignment : undefined,
+                role: (canSeeRole || state.gameOver) ? p.role : undefined,
+                originalRole: (canSeeRole || state.gameOver) ? p.originalRole : undefined,
+                alignment: (canSeeRole || state.gameOver) ? p.alignment : undefined,
                 votePower: p.votePower,
+                cumulativePoints: p.cumulativePoints,
+                roundPoints: p.roundPoints,
                 ...(isOwn ? {
                     likes: p.likes,
                     dislikes: p.dislikes,
+                    jailedHistory: p.jailedHistory,
+                    doctorLastSaved: p.doctorLastSaved,
                     startingClues: p.role === "Detective" ? p.startingClues : p.startingClues.map(c => ({ text: c.text })),
                     discoveredClues: p.discoveredClues,
                     sharedClues: p.sharedClues,
                     objectives: p.objectives,
                     objectivesCompleted: p.objectivesCompleted,
+                    objectiveSelections: p.objectiveSelections,
                     feedbackLog: p.feedbackLog,
                     notes: p.notes,
                     trackerMarks: p.trackerMarks || {},
@@ -1272,6 +1452,8 @@ export default class MurderMysteryServer implements Party.Server {
             startingClues: [], discoveredClues: [], sharedClues: [],
             objectives: [], objectivesCompleted: [false, false, false],
             feedbackLog: [], notes: "",
+            jailedHistory: [],
+            objectiveSelections: [null, null],
             trackerMarks: {}, trackerRoles: {},
             votePower: 1, mayorPenaltyNextRound: false,
             judgeUsesLeft: 0, judgeUsedOn: [],
@@ -1279,6 +1461,16 @@ export default class MurderMysteryServer implements Party.Server {
             witchMimicHistory: [], witchCurrentMimic: null, witchNextMimic: null,
             doctorLastSaved: null,
             cumulativePoints: 0, roundPoints: 0,
+            bonusPointEarned: false,
+            spyDiscoveredLeaving: false,
+            detectiveFoundMurdererVisit: false,
+            psychicFoundEvil: false,
+            witchMimicsUsed: 0,
+            assassinKilled: false,
+            vigilanteKilledEvil: false,
+            mediumFoundEvil: false,
+            coronerUniqueCauses: [],
+            jailorPrevented: false,
         };
     }
 }

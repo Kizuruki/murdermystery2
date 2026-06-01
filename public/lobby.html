@@ -269,11 +269,12 @@
       }
     }
 
-      function selectCharacter(charId) {
+    function selectCharacter(charId) {
         selectedChar = charId;
+        sessionStorage.setItem('mm_char_id', charId);
         renderCharGrid();
         safeSend({ type: 'join', characterId: charId, nickname });
-      }
+    }
 
   function renderPlayers() {
     if (!gameState) return;

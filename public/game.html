@@ -1195,6 +1195,7 @@
             <div class="phase-pill" id="phase-pill">Waiting...</div>
             <div class="timer-badge" id="timer-badge">—</div>
             <button class="role-btn" id="role-btn" onclick="showRoleModal()" title="View your role">🎭</button>
+            <button class="role-btn" onclick="window.open('rules.html','_blank')" title="Rules">📋</button>
             <button class="role-btn" id="admin-btn" onclick="openAdmin()" style="display:none">⚙️</button>
         </div>
 
@@ -1287,11 +1288,26 @@
     <div class="gameover hidden" id="gameover">
         <div class="gameover-title" id="go-title">Good Wins!</div>
         <div class="gameover-sub" id="go-sub"></div>
-        <div class="survivors" id="go-survivors"></div>
-        <button class="gameover-btn" onclick="window.location.href='index.html'">Play Again</button>
+        <div class="survivors" id="go-survivors" style="max-height:50vh;overflow-y:auto;"></div>
+        <div id="go-host-controls" style="display:none;width:100%;max-width:320px;margin-top:1rem;">
+            <div style="font-family:'Cinzel',serif;font-size:0.7rem;letter-spacing:0.15em;color:var(--text-dim);margin-bottom:0.75rem;">HOST OPTIONS</div>
+            <button class="gameover-btn" style="width:100%;margin-bottom:0.5rem;" onclick="hostNewGame(true)">Continue — Keep Points</button>
+            <button class="gameover-btn" style="width:100%;margin-bottom:0.5rem;background:linear-gradient(135deg,#1a3a1a,#0a1a0a);" onclick="hostNewGame(false)">Continue — Reset Points</button>
+            <button class="gameover-btn" style="width:100%;background:transparent;border-color:var(--border);color:var(--text-dim);" onclick="hostEndSession()">End Session</button>
+        </div>
+        <div id="go-guest-msg" style="margin-top:1rem;font-style:italic;color:var(--text-dim);font-size:0.85rem;">Waiting for host to continue...</div>
     </div>
 
     <div class="notif" id="notif"></div>
+
+    <!-- Death popup -->
+    <div class="modal-overlay hidden" id="death-modal">
+        <div class="modal">
+            <div class="modal-title" style="color:var(--crimson-pale)">☩ YOU HAVE DIED</div>
+            <div id="death-modal-content" style="font-size:0.9rem;color:var(--text-dim);margin-bottom:1rem;font-style:italic;"></div>
+            <button class="modal-close" onclick="document.getElementById('death-modal').classList.add('hidden')">Close</button>
+        </div>
+    </div>
 
     <script>
         // ─── Config ───────────────────────────────────────────────────────────────────
@@ -1330,11 +1346,23 @@
         let timerTickInterval = null; // host-only: drives server phase advancement
 
         // ─── WebSocket ────────────────────────────────────────────────────────────────
+        function hostNewGame(keepPoints) {
+            send({ type: 'host_new_game', keepPoints });
+        }
+        function hostEndSession() {
+            send({ type: 'host_end_session' });
+        }
+
         function connect() {
             const protocol = PARTYKIT_HOST.startsWith('localhost') ? 'ws' : 'wss';
             const url = `${PARTYKIT_HOST.startsWith('localhost') ? 'ws' : 'wss'}://${PARTYKIT_HOST}/party/${roomCode.toLowerCase()}`;
             ws = new WebSocket(url);
-            ws.onopen = () => { send({ type: 'request_state' }); };
+            ws.onopen = () => {
+                const charId = sessionStorage.getItem('mm_char_id');
+                const nick = sessionStorage.getItem('mm_nickname') || 'Guest';
+                if (charId) send({ type: 'join', characterId: charId, nickname: nick });
+                send({ type: 'request_state' });
+            };
             ws.onmessage = (e) => { try { handleMessage(JSON.parse(e.data)); } catch (err) { console.error(err); } };
             ws.onclose = () => { setTimeout(connect, 2000); };
             ws.onerror = () => ws.close();
@@ -1353,7 +1381,7 @@
                     myId = msg.myId;
                     isHost = msg.isHost;
                     me = gameState.players[myId];
-                        
+
                     // Ensure trackerMarks and trackerRoles are always objects client-side
                     if (me) {
                         me.trackerMarks = me.trackerMarks || {};
@@ -1369,6 +1397,13 @@
                 }
                 case 'chat':
                     appendChatMessage(msg.message);
+                    break;
+                case 'redirect_lobby':
+                    sessionStorage.setItem('mm_room_code', msg.roomCode);
+                    window.location.href = 'lobby.html?room=' + msg.roomCode + (isHost ? '&host=1' : '');
+                    break;
+                case 'session_ended':
+                    window.location.href = 'index.html';
                     break;
                 case 'action_received':
                     showNotif('Action submitted ✓');
@@ -1400,6 +1435,15 @@
 
         // ─── Phase Change ─────────────────────────────────────────────────────────────
         function onPhaseChange(from, to) {
+            // Check if we just died
+            if (from === 'night_action' && to === 'night_feedback' && gameState && me) {
+                const freshMe = gameState.players[myId];
+                if (freshMe && !freshMe.alive && me.alive) {
+                    // We died this night
+                    document.getElementById('death-modal-content').textContent = 'You have been eliminated. You may still observe the game.';
+                    document.getElementById('death-modal').classList.remove('hidden');
+                }
+            }
             nightActionTarget = undefined;
             nightActionSecondary = null;
             voteTarget = undefined;
@@ -1421,7 +1465,8 @@
             me.trackerRoles = me.trackerRoles || {};
 
             document.getElementById('admin-btn').style.display = isHost ? 'flex' : 'none';
-
+            const guestMsg = document.getElementById('go-guest-msg');
+            if (guestMsg) guestMsg.style.display = isHost ? 'none' : 'block';
             const pill = document.getElementById('phase-pill');
             const phaseLabels = { lobby: 'Lobby', role_reveal: 'Role Reveal', day: 'Day', discussion: 'Discussion', voting: 'Voting', judge_save: 'Judge Save', night_action: 'Night', night_feedback: 'Night Feedback', game_over: 'Game Over', scoring: 'Scoring' };
             const nightPhases = ['night_action', 'night_feedback'];
@@ -1436,6 +1481,13 @@
             renderDMSelector();
             renderJournal();
             renderTracker();
+            // Disable chat inputs for dead players
+            const isDead = me && !me.alive;
+            ['global', 'evil', 'dm'].forEach(channel => {
+                const input = document.getElementById(`chat-input-${channel}`);
+                const btn = input?.nextElementSibling;
+                if (input) { input.disabled = isDead; input.placeholder = isDead ? 'The dead cannot speak...' : (channel === 'dm' ? 'Private message...' : channel === 'evil' ? 'Conspire in secret...' : 'Speak your mind...'); }
+            });
             if (document.getElementById('admin-panel').classList.contains('open')) renderAdminContent();
             if (gameState.gameOver) showGameOver();
         }
@@ -1468,7 +1520,9 @@
             let html = '';
 
             // Death announcements
-            const roundDeaths = gameState.deathLog.filter(d => d.round === gameState.round - 1 && phase !== 'role_reveal');
+            // Show deaths from this round during night_feedback, or from previous round during day phases
+            const deathRound = ['night_feedback'].includes(phase) ? gameState.round : gameState.round - 1;
+            const roundDeaths = gameState.deathLog.filter(d => d.round === deathRound && phase !== 'role_reveal' && phase !== 'night_action');
             roundDeaths.forEach(d => {
                 html += `<div class="death-banner"><div class="death-name">☩ ${d.playerName}</div><div class="death-sub">${d.cause}</div></div>`;
             });
@@ -1478,40 +1532,50 @@
 
             // Character info
             html += `<div class="card">
-        <div class="card-header"><span class="card-title">Character</span></div>
-        <div class="card-body">
-          <div style="font-family:'Cinzel',serif;font-size:1rem;color:var(--gold);margin-bottom:0.25rem;">${me.name}</div>
-          <div style="font-size:0.82rem;color:var(--text-dim);font-style:italic;margin-bottom:0.75rem;">${me.nickname}</div>
-          <div style="margin-bottom:0.5rem;font-size:0.82rem;"><span style="color:var(--text-dim)">Likes: </span>${(me.likes || []).map(l => `<span class="pref-tag like">${l}</span>`).join('')}</div>
-          <div style="font-size:0.82rem;"><span style="color:var(--text-dim)">Dislikes: </span>${(me.dislikes || []).map(d => `<span class="pref-tag dislike">${d}</span>`).join('')}</div>
-        </div>
-      </div>`;
+            <div class="card-header"><span class="card-title">Character</span></div>
+            <div class="card-body">
+              <div style="font-family:'Cinzel',serif;font-size:1rem;color:var(--gold);margin-bottom:0.25rem;">${me.name}</div>
+              <div style="font-size:0.82rem;color:var(--text-dim);font-style:italic;margin-bottom:0.75rem;">${me.nickname}</div>
+              <div style="margin-bottom:0.5rem;font-size:0.82rem;"><span style="color:var(--text-dim)">Likes: </span>${(me.likes || []).map(l => `<span class="pref-tag like">${l}</span>`).join('')}</div>
+              <div style="font-size:0.82rem;"><span style="color:var(--text-dim)">Dislikes: </span>${(me.dislikes || []).map(d => `<span class="pref-tag dislike">${d}</span>`).join('')}</div>
+            </div>
+          </div>`;
 
             // Objectives — with inline player picker
             const objs = me.objectives || [];
             const objDone = me.objectivesCompleted || [false, false, false];
             if (objs.length > 0) {
+                const sel = me.objectiveSelections || [null, null];
+                const alivePlayers = Object.values(gameState.players).filter(p => p.id !== myId);
                 html += `<div class="card">
-          <div class="card-header"><span class="card-title">Objectives</span><span style="font-size:0.7rem;color:var(--text-dim)">${objDone.filter(Boolean).length}/3</span></div>
-          <div class="card-body">`;
+                  <div class="card-header"><span class="card-title">Objectives</span><span style="font-size:0.7rem;color:var(--text-dim)">Verified at game end</span></div>
+                  <div class="card-body">`;
                 objs.forEach((obj, i) => {
-                    const isDone = objDone[i];
-                    html += `<div class="obj-item${isDone ? ' done' : ''}">
-            <div class="obj-item-row">
-              <div class="obj-check${isDone ? ' checked' : ''}" onclick="handleObjectiveClick(${i})">${isDone ? '✓' : ''}</div>
-              <div style="flex:1">${obj}</div>
-            </div>`;
-                    // Show inline picker for objectives 0 and 1 when clicked and not done
-                    if (activeObjPicker === i && !isDone && i < 2) {
-                        const players = Object.values(gameState.players).filter(p => p.id !== myId);
-                        html += `<div class="obj-picker">
-              <div style="font-size:0.7rem;color:var(--text-dim);font-family:'Cinzel',serif;letter-spacing:0.1em;padding:0.2rem 0;">WHO FULFILLS THIS?</div>
-              ${players.map(p => `<div class="obj-picker-item" onclick="completeObjective(${i},'${p.id}')">${p.name} <span style="color:var(--text-dim);font-size:0.72rem">(${p.nickname})</span></div>`).join('')}
-              <div class="obj-picker-cancel" onclick="activeObjPicker=-1;renderJournal()">✕ Cancel</div>
-            </div>`;
+                    if (i === 2) {
+                        // Obj 3 is auto — just show status
+                        html += `<div class="obj-item">
+                          <div class="obj-item-row">
+                            <div class="obj-check" style="cursor:default">3</div>
+                            <div style="flex:1">${obj}</div>
+                          </div>
+                        </div>`;
+                        return;
                     }
-                    // Objective 2 just gets a checkbox (someone marks you, you get updated automatically)
-                    html += `</div>`;
+                    const selectedId = sel[i];
+                    const selectedPlayer = selectedId ? gameState.players[selectedId] : null;
+                    html += `<div class="obj-item">
+                      <div class="obj-item-row">
+                        <div class="obj-check" style="cursor:default">${i + 1}</div>
+                        <div style="flex:1">${obj}</div>
+                      </div>
+                      <div style="margin-top:0.5rem;">
+                        <select style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:3px;padding:0.5rem;color:var(--text);font-family:'IM Fell English',serif;font-size:0.85rem;outline:none;"
+                          onchange="updateObjSelection(${i}, this.value)" ${!me.alive || gameState.gameOver ? 'disabled' : ''}>
+                          <option value="">Select a player...</option>
+                          ${alivePlayers.map(p => `<option value="${p.id}"${selectedId === p.id ? ' selected' : ''}>${p.name} (${p.nickname})</option>`).join('')}
+                        </select>
+                      </div>
+                    </div>`;
                 });
                 html += `</div></div>`;
             }
@@ -1537,9 +1601,9 @@
                     const shared = (me.sharedClues || []).includes(clueText);
                     const safeText = clueText.replace(/'/g, "\\'");
                     html += `<div class="clue-item">${clueText}<br>
-            <button class="clue-share-btn ${shared ? 'shared' : ''}" onclick="shareClue('${safeText}')">
-              ${shared ? '✓ Shared with town' : 'Share with town'}
-            </button></div>`;
+                <button class="clue-share-btn ${shared ? 'shared' : ''}" onclick="shareClue('${safeText}')">
+                  ${shared ? '✓ Shared with town' : 'Share with town'}
+                </button></div>`;
                 });
                 html += `</div></div>`;
             }
@@ -1547,12 +1611,12 @@
             // Physical clue code entry
             if (gameState.settings?.clueMode === 'physical') {
                 html += `<div class="card"><div class="card-header"><span class="card-title">Enter Clue Code</span></div><div class="card-body">
-          <div style="font-size:0.82rem;color:var(--text-dim);margin-bottom:0.5rem;font-style:italic;">Found a code on a hidden note? Enter it here.</div>
-          <div class="code-entry">
-            <input type="text" id="clue-code-input" placeholder="XXXXXX" maxlength="6" oninput="this.value=this.value.toUpperCase()">
-            <button onclick="enterClueCode()">Reveal</button>
-          </div>
-        </div></div>`;
+              <div style="font-size:0.82rem;color:var(--text-dim);margin-bottom:0.5rem;font-style:italic;">Found a code on a hidden note? Enter it here.</div>
+              <div class="code-entry">
+                <input type="text" id="clue-code-input" placeholder="XXXXXX" maxlength="6" oninput="this.value=this.value.toUpperCase()">
+                <button onclick="enterClueCode()">Reveal</button>
+              </div>
+            </div></div>`;
             }
 
             // Feedback log
@@ -1567,13 +1631,20 @@
 
             // Notes
             html += `<div class="card"><div class="card-header"><span class="card-title">Notes</span></div><div class="card-body">
-        <textarea class="notes-textarea" id="notes-area" placeholder="Write your notes here... (private)" onblur="saveNotes()">${(me.notes || '').replace(/</g, '&lt;')}</textarea>
-      </div></div>`;
+            <textarea class="notes-textarea" id="notes-area" placeholder="Write your notes here... (private)" onblur="saveNotes()">${(me.notes || '').replace(/</g, '&lt;')}</textarea>
+          </div></div>`;
 
             container.innerHTML = html;
         }
 
         // ─── Objective Handling ───────────────────────────────────────────────────────
+        function updateObjSelection(index, targetId) {
+            send({ type: 'update_objective_selection', objectiveIndex: index, targetPlayerId: targetId || null });
+            if (me) {
+                if (!me.objectiveSelections) me.objectiveSelections = [null, null];
+                me.objectiveSelections[index] = targetId || null;
+            }
+        }
         function handleObjectiveClick(index) {
             if (!me) return;
             const isDone = me.objectivesCompleted[index];
@@ -1641,19 +1712,22 @@
             const targetPool = role === 'Medium' ? Object.values(gameState.players).filter(p => !p.alive) : alivePlayers;
 
             let html = `<div class="action-panel">
-        <div class="action-header">☾ NIGHT ${round} — ${ROLE_ICONS[role] || ''} ${role}</div>
-        <div class="action-body">
-          <div style="font-size:0.82rem;color:var(--text-dim);font-style:italic;margin-bottom:0.75rem;">${roleDescs[role] || ''}</div>
-          <div class="player-picker">`;
+            <div class="action-header">☾ NIGHT ${round} — ${ROLE_ICONS[role] || ''} ${role}</div>
+            <div class="action-body">
+              <div style="font-size:0.82rem;color:var(--text-dim);font-style:italic;margin-bottom:0.75rem;">${roleDescs[role] || ''}</div>
+              <div class="player-picker">`;
 
             if (['Assassin', 'Vigilante'].includes(role)) {
                 html += `<div class="picker-item${nightActionTarget === null ? ' selected' : ''}" onclick="selectNightTarget(null)">
-          <div><div class="picker-item-name">Don't use</div><div class="picker-item-sub">Save for later</div></div></div>`;
+              <div><div class="picker-item-name">Don't use</div><div class="picker-item-sub">Save for later</div></div></div>`;
             }
 
             targetPool.forEach(p => {
+                const isLastSaved = role === 'Doctor' && me.doctorLastSaved === p.id;
+                const alreadyJailed = role === 'Jailor' && (me.jailedHistory || []).includes(p.id);
+                if (isLastSaved || alreadyJailed) return;
                 html += `<div class="picker-item${nightActionTarget === p.id ? ' selected' : ''}" onclick="selectNightTarget('${p.id}')">
-          <div><div class="picker-item-name">${p.name}</div><div class="picker-item-sub">${p.nickname}</div></div></div>`;
+                  <div><div class="picker-item-name">${p.name}</div><div class="picker-item-sub">${p.nickname}</div></div></div>`;
             });
 
             html += `</div>`;
@@ -1663,13 +1737,13 @@
                 const allMimicable = ["Doctor", "Detective", "Judge", "Mayor", "Psychic", "Medium", "Coroner", "Spy", "Jailor"];
                 const available = allMimicable.filter(r => !mimicHistory.includes(r));
                 html += `<div style="margin-top:1rem;">
-          <div style="font-family:'Cinzel',serif;font-size:0.68rem;letter-spacing:0.15em;color:var(--gold);margin-bottom:0.5rem;">NEXT MIMIC</div>
-          <select onchange="nightActionSecondary=this.value" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:3px;padding:0.6rem;color:var(--text);font-family:'IM Fell English',serif;font-size:0.9rem;outline:none;">
-            <option value="">Choose role to mimic next...</option>
-            ${available.map(r => `<option value="${r}">${ROLE_ICONS[r] || ''} ${r}</option>`).join('')}
-          </select>
-          <div style="font-size:0.72rem;color:var(--text-dim);margin-top:0.35rem;font-style:italic;">Already mimicked: ${mimicHistory.join(', ') || 'none'}</div>
-        </div>`;
+              <div style="font-family:'Cinzel',serif;font-size:0.68rem;letter-spacing:0.15em;color:var(--gold);margin-bottom:0.5rem;">NEXT MIMIC</div>
+              <select onchange="nightActionSecondary=this.value" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:3px;padding:0.6rem;color:var(--text);font-family:'IM Fell English',serif;font-size:0.9rem;outline:none;">
+                <option value="">Choose role to mimic next...</option>
+                ${available.map(r => `<option value="${r}">${ROLE_ICONS[r] || ''} ${r}</option>`).join('')}
+              </select>
+              <div style="font-size:0.72rem;color:var(--text-dim);margin-top:0.35rem;font-style:italic;">Already mimicked: ${mimicHistory.join(', ') || 'none'}</div>
+            </div>`;
             }
 
             const canSubmit = nightActionTarget !== undefined && (
@@ -1692,29 +1766,29 @@
             const myVotePower = me.votePower || 1;
 
             let html = `<div class="action-panel">
-        <div class="action-header">☀ VOTING${myVotePower > 1 ? ' — Double Vote' : ''}</div>
-        <div class="action-body">
-          <div style="font-size:0.82rem;color:var(--text-dim);font-style:italic;margin-bottom:0.75rem;">
-            Vote to eliminate a suspect.${myVotePower > 1 ? ` Your vote counts as ${myVotePower}` : ''}</div>
-          <div class="player-picker">
-            <div class="picker-item${voteTarget === null ? ' selected' : ''}" onclick="selectVote(null)">
-              <div><div class="picker-item-name">Skip vote</div><div class="picker-item-sub">Don't eliminate anyone</div></div></div>`;
+            <div class="action-header">☀ VOTING${myVotePower > 1 ? ' — Double Vote' : ''}</div>
+            <div class="action-body">
+              <div style="font-size:0.82rem;color:var(--text-dim);font-style:italic;margin-bottom:0.75rem;">
+                Vote to eliminate a suspect.${myVotePower > 1 ? ` Your vote counts as ${myVotePower}` : ''}</div>
+              <div class="player-picker">
+                <div class="picker-item${voteTarget === null ? ' selected' : ''}" onclick="selectVote(null)">
+                  <div><div class="picker-item-name">Skip vote</div><div class="picker-item-sub">Don't eliminate anyone</div></div></div>`;
 
             players.forEach(p => {
                 if (p.id === myId) return;
                 html += `<div class="picker-item${voteTarget === p.id ? ' selected' : ''}" onclick="selectVote('${p.id}')">
-          <div><div class="picker-item-name">${p.name}</div><div class="picker-item-sub">${p.nickname}</div></div></div>`;
+              <div><div class="picker-item-name">${p.name}</div><div class="picker-item-sub">${p.nickname}</div></div></div>`;
             });
 
             html += `</div>`;
 
             if (isJudge || isWitchJudge) {
                 html += `<div style="margin-top:1rem;">
-          <div style="font-family:'Cinzel',serif;font-size:0.68rem;letter-spacing:0.15em;color:var(--gold);margin-bottom:0.5rem;">JUDGE SAVE (optional)</div>
-          <select onchange="selectJudgeSave(this.value)" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:3px;padding:0.6rem;color:var(--text);font-family:'IM Fell English',serif;font-size:0.9rem;outline:none;">
-            <option value="">Don't save anyone</option>
-            ${players.map(p => `<option value="${p.id}">${p.name}</option>`).join('')}
-          </select></div>`;
+              <div style="font-family:'Cinzel',serif;font-size:0.68rem;letter-spacing:0.15em;color:var(--gold);margin-bottom:0.5rem;">JUDGE SAVE (optional)</div>
+              <select onchange="selectJudgeSave(this.value)" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:3px;padding:0.6rem;color:var(--text);font-family:'IM Fell English',serif;font-size:0.9rem;outline:none;">
+                <option value="">Don't save anyone</option>
+                ${players.map(p => `<option value="${p.id}">${p.name}</option>`).join('')}
+              </select></div>`;
             }
 
             html += `<button class="submit-btn" onclick="submitVote()" ${voteTarget === undefined ? 'disabled' : ''}>Cast Vote</button>`;
@@ -1734,8 +1808,8 @@
             const guessedRoles = (me && me.trackerRoles) ? me.trackerRoles : {};
 
             let html = `<div class="card"><div class="card-header"><span class="card-title">Suspect Board</span></div><div class="card-body">
-        <div style="font-size:0.75rem;color:var(--text-dim);font-style:italic;margin-bottom:0.75rem;">Tap ◉ to mark suspicious, ✕ to mark safe. Guess their role.</div>
-        <div class="tracker-list">`;
+            <div style="font-size:0.75rem;color:var(--text-dim);font-style:italic;margin-bottom:0.75rem;">Tap ◉ to mark suspicious, ✕ to mark safe. Guess their role.</div>
+            <div class="tracker-list">`;
 
             players.forEach(p => {
                 const mark = marks[p.id] || 'none';
@@ -1743,19 +1817,23 @@
                 const isDead = !p.alive;
                 const isMe = p.id === myId;
                 html += `<div class="tracker-item${isDead ? ' dead' : ''}${mark === 'circle' ? ' circled' : ''}${mark === 'x' ? ' xed' : ''}">
-          <div class="tracker-name">
-            <div class="tracker-char-name${isDead ? ' dead-x' : ''}">${p.name}${isMe ? ' (you)' : ''}</div>
-            <div class="tracker-nickname">${p.nickname}</div>
-          </div>
-          ${!isMe ? `<select class="tracker-role-guess" onchange="updateTrackerRole('${p.id}',this.value)">
-            <option value="">Role?</option>
-            ${ALL_ROLES.map(r => `<option value="${r}"${guessedRole === r ? ' selected' : ''}>${r}</option>`).join('')}
-          </select>`: ''}
-          ${!isMe ? `<div class="tracker-marks">
-            <button class="mark-btn${mark === 'circle' ? ' circle-active' : ''}" onclick="toggleMark('${p.id}','circle')">◉</button>
-            <button class="mark-btn${mark === 'x' ? ' x-active' : ''}" onclick="toggleMark('${p.id}','x')">✕</button>
-          </div>`: ''}
-        </div>`;
+              <div class="tracker-name">
+                <div class="tracker-char-name${isDead ? ' dead-x' : ''}">${p.name}${isMe ? ' (you)' : ''}</div>
+                <div class="tracker-nickname">${p.nickname}</div>
+              </div>
+                ${!isMe ? (
+                        (me && EVIL_ROLES.includes(me.role) && EVIL_ROLES.includes(p.role || ''))
+                            ? `<span style="font-family:'Cinzel',serif;font-size:0.72rem;color:var(--crimson-pale)">${p.role} (evil)</span>`
+                            : `<select class="tracker-role-guess" onchange="updateTrackerRole('${p.id}',this.value)">
+                        <option value="">Role?</option>
+                        ${ALL_ROLES.map(r => `<option value="${r}"${guessedRole === r ? ' selected' : ''}>${r}</option>`).join('')}
+                       </select>`
+                    ) : ''}
+              ${!isMe ? `<div class="tracker-marks">
+                <button class="mark-btn${mark === 'circle' ? ' circle-active' : ''}" onclick="toggleMark('${p.id}','circle')">◉</button>
+                <button class="mark-btn${mark === 'x' ? ' x-active' : ''}" onclick="toggleMark('${p.id}','x')">✕</button>
+              </div>`: ''}
+            </div>`;
             });
 
             html += `</div></div></div>`;
@@ -1784,8 +1862,8 @@
             div.className = `msg${isMine ? ' mine' : ''}${msg.to === 'evil' ? ' evil' : ''}`;
             const time = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
             div.innerHTML = `<div class="msg-from">${isMine ? 'You' : escapeHtml(msg.fromName)}</div>
-        <div class="msg-text">${escapeHtml(msg.text)}</div>
-        <div class="msg-time">${time}</div>`;
+            <div class="msg-text">${escapeHtml(msg.text)}</div>
+            <div class="msg-time">${time}</div>`;
             container.appendChild(div);
             container.scrollTop = container.scrollHeight;
 
@@ -1851,6 +1929,7 @@
 
         function sendChat(channel) {
             if (!gameState?.settings?.chatEnabled) { showNotif('Chat is disabled'); return; }
+            if (me && !me.alive) { showNotif('The dead cannot speak'); return; }
             let text, to;
             if (channel === 'global') {
                 text = document.getElementById('chat-input-global').value.trim();
@@ -1953,12 +2032,12 @@
             if (!me) return;
             const content = document.getElementById('role-modal-content');
             content.innerHTML = `
-        <div style="font-size:2rem;margin-bottom:0.5rem;">${ROLE_ICONS[me.role] || '?'}</div>
-        <div style="font-family:'Cinzel',serif;font-size:1.1rem;color:${EVIL_ROLES.includes(me.role) ? 'var(--crimson-pale)' : 'var(--good-bright)'};margin-bottom:0.25rem;">${me.role}</div>
-        <div style="font-size:0.82rem;color:var(--text-dim);font-style:italic;margin-bottom:0.75rem;">${me.alignment || ''}</div>
-        ${EVIL_ROLES.includes(me.role) ? `<div style="font-size:0.78rem;color:var(--crimson-pale);">
-          ${Object.values(gameState.players).filter(p => p.id !== myId && EVIL_ROLES.includes(p.role || '')).map(p => `${p.name}: ${p.role || '?'}`).join('<br>') || 'No other evil players known'}
-        </div>`: ''}`;
+            <div style="font-size:2rem;margin-bottom:0.5rem;">${ROLE_ICONS[me.role] || '?'}</div>
+            <div style="font-family:'Cinzel',serif;font-size:1.1rem;color:${EVIL_ROLES.includes(me.role) ? 'var(--crimson-pale)' : 'var(--good-bright)'};margin-bottom:0.25rem;">${me.role}</div>
+            <div style="font-size:0.82rem;color:var(--text-dim);font-style:italic;margin-bottom:0.75rem;">${me.alignment || ''}</div>
+            ${EVIL_ROLES.includes(me.role) ? `<div style="font-size:0.78rem;color:var(--crimson-pale);">
+              ${Object.values(gameState.players).filter(p => p.id !== myId && EVIL_ROLES.includes(p.role || '')).map(p => `${p.name}: ${p.role || '?'}`).join('<br>') || 'No other evil players known'}
+            </div>`: ''}`;
             document.getElementById('role-modal').classList.remove('hidden');
         }
 
@@ -1974,30 +2053,30 @@
             if (!div) return;
 
             let html = `<div style="font-family:'Cinzel',serif;font-size:0.7rem;letter-spacing:0.15em;color:var(--text-dim);margin-bottom:0.5rem;">PHASE: ${gameState.phase.toUpperCase()} · ROUND ${gameState.round}</div>
-      <div style="display:flex;gap:0.5rem;margin-bottom:1rem;">
-        <button class="admin-btn" onclick="adminPause()" style="flex:1">${gameState.timerPaused ? '▶ Resume' : '⏸ Pause'} Timer</button>
-        <button class="admin-btn" onclick="adminSkip()" style="flex:1">⏭ Skip Phase</button>
-      </div>
-      <div style="font-family:'Cinzel',serif;font-size:0.7rem;letter-spacing:0.15em;color:var(--text-dim);margin-bottom:0.5rem;">PLAYERS</div>`;
+          <div style="display:flex;gap:0.5rem;margin-bottom:1rem;">
+            <button class="admin-btn" onclick="adminPause()" style="flex:1">${gameState.timerPaused ? '▶ Resume' : '⏸ Pause'} Timer</button>
+            <button class="admin-btn" onclick="adminSkip()" style="flex:1">⏭ Skip Phase</button>
+          </div>
+          <div style="font-family:'Cinzel',serif;font-size:0.7rem;letter-spacing:0.15em;color:var(--text-dim);margin-bottom:0.5rem;">PLAYERS</div>`;
 
             Object.values(gameState.players).forEach(p => {
                 const isEvil = EVIL_ROLES.includes(p.role || '');
                 html += `<div class="admin-player">
-          <div style="flex:1;min-width:0;">
-            <div style="font-family:'Cinzel',serif;font-size:0.8rem;">${p.name}</div>
-            <div style="font-size:0.72rem;color:var(--text-dim);">${p.nickname} · <span class="${isEvil ? 'evil-badge' : ''}role-badge">${p.role || '?'}</span></div>
-          </div>
-          ${!p.alive ? '<span style="font-size:0.7rem;color:var(--crimson-pale)">Dead</span>' : `<button class="admin-kill-btn" onclick="adminKill('${p.id}')">Kill</button>`}
-        </div>`;
+              <div style="flex:1;min-width:0;">
+                <div style="font-family:'Cinzel',serif;font-size:0.8rem;">${p.name}</div>
+                <div style="font-size:0.72rem;color:var(--text-dim);">${p.nickname} · <span class="${isEvil ? 'evil-badge' : ''}role-badge">${p.role || '?'}</span></div>
+              </div>
+              ${!p.alive ? '<span style="font-size:0.7rem;color:var(--crimson-pale)">Dead</span>' : `<button class="admin-kill-btn" onclick="adminKill('${p.id}')">Kill</button>`}
+            </div>`;
             });
 
             if (gameState.settings?.clueMode === 'physical' && gameState.hiddenClues) {
                 html += `<div style="font-family:'Cinzel',serif;font-size:0.7rem;letter-spacing:0.15em;color:var(--text-dim);margin-top:1rem;margin-bottom:0.5rem;">CLUE CODES</div>`;
                 gameState.hiddenClues.forEach(c => {
                     html += `<div style="padding:0.5rem;background:var(--surface2);border-radius:3px;margin-bottom:0.4rem;display:flex;justify-content:space-between;">
-            <span style="font-family:'Cinzel',serif;letter-spacing:0.2em;color:var(--gold)">${c.code}</span>
-            <span style="font-size:0.7rem;color:${c.found ? 'var(--good-bright)' : 'var(--text-dim)'}">${c.found ? '✓ Found' : 'Hidden'}</span>
-          </div>`;
+                <span style="font-family:'Cinzel',serif;letter-spacing:0.2em;color:var(--gold)">${c.code}</span>
+                <span style="font-size:0.7rem;color:${c.found ? 'var(--good-bright)' : 'var(--text-dim)'}">${c.found ? '✓ Found' : 'Hidden'}</span>
+              </div>`;
                 });
             }
 
@@ -2026,10 +2105,29 @@
             document.getElementById('go-title').textContent = winner === 'Good' ? '⚖️ Good Wins' : '🔪 Evil Wins';
             document.getElementById('go-title').className = `gameover-title ${winner?.toLowerCase() || ''}`;
             document.getElementById('go-sub').textContent = winner === 'Good' ? 'Justice has been served.' : 'Darkness has prevailed.';
-            const survivors = Object.values(gameState.players).filter(p => p.alive);
-            document.getElementById('go-survivors').innerHTML = `<h3>Survivors</h3>` + survivors.map(p =>
-                `<div class="survivor-item"><span>${p.name}</span><span style="color:${EVIL_ROLES.includes(p.role || '') ? 'var(--crimson-pale)' : 'var(--good-bright)'}">${p.role}</span></div>`
-            ).join('');
+
+            const players = Object.values(gameState.players).sort((a, b) => (b.cumulativePoints || 0) - (a.cumulativePoints || 0));
+
+            let survivorsHtml = `<h3>Leaderboard</h3>`;
+            players.forEach(p => {
+                const roleColor = EVIL_ROLES.includes(p.role || '') ? 'var(--crimson-pale)' : 'var(--good-bright)';
+                survivorsHtml += `<div class="survivor-item">
+          <span>${p.name} <span style="font-size:0.7rem;color:var(--text-dim)">(${p.nickname})</span></span>
+          <span style="color:${roleColor};font-size:0.75rem">${p.role || '?'}</span>
+          <span style="color:var(--gold);font-family:'Cinzel',serif">${(p.cumulativePoints || 0).toFixed(2)}pts</span>
+        </div>
+        <div style="font-size:0.72rem;color:var(--text-dim);padding:0.2rem 0 0.4rem 0;border-bottom:1px solid var(--border);">
+          This game: ${(p.roundPoints || 0).toFixed(2)}pts · ${p.alive ? 'Survived' : 'Eliminated'}
+        </div>`;
+            });
+            document.getElementById('go-survivors').innerHTML = survivorsHtml;
+
+            // Host controls
+            const hostControls = document.getElementById('go-host-controls');
+            if (hostControls) {
+                hostControls.style.display = isHost ? 'block' : 'none';
+            }
+
             el.classList.remove('hidden');
         }
 
