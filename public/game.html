@@ -1123,6 +1123,23 @@
                 margin-bottom: 0.75rem;
             }
 
+        .go-tab {
+            flex: 1;
+            padding: 0.5rem;
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            color: var(--text-dim);
+            font-family: 'Cinzel',serif;
+            font-size: 0.68rem;
+            cursor: pointer;
+        }
+
+            .go-tab.active {
+                border-color: var(--gold-dim);
+                color: var(--gold);
+            }
+
         .survivor-item {
             display: flex;
             justify-content: space-between;
@@ -1260,6 +1277,10 @@
             <div class="role-card-role" id="ro-role"></div>
             <div class="role-card-align" id="ro-align"></div>
             <div class="role-card-teammates" id="ro-teammates"></div>
+            <div id="ro-pool-card" style="margin-top:1rem;background:var(--surface2);border:1px solid var(--border-gold);border-radius:4px;padding:1rem;width:100%;text-align:left;">
+                <div style="font-family:'Cinzel',serif;font-size:0.65rem;letter-spacing:0.18em;color:var(--gold);margin-bottom:0.6rem;">ROLES IN PLAY</div>
+                <div id="ro-pool" style="font-size:0.82rem;line-height:1.8;"></div>
+            </div>
             <button class="role-hide-btn" onclick="hideRoleOverlay()">Hold to hide your role →</button>
         </div>
     </div>
@@ -1289,6 +1310,13 @@
         <div class="gameover-title" id="go-title">Good Wins!</div>
         <div class="gameover-sub" id="go-sub"></div>
         <div class="survivors" id="go-survivors" style="max-height:50vh;overflow-y:auto;"></div>
+        <div id="go-event-log" style="display:none;width:100%;max-width:320px;max-height:40vh;overflow-y:auto;"></div>
+        <div id="go-char-summary" style="display:none;width:100%;max-width:320px;"></div>
+        <div id="go-tabs" style="display:flex;gap:0.5rem;margin-top:1rem;width:100%;max-width:320px;">
+            <button onclick="switchGoTab('scores')" class="go-tab active" id="go-tab-scores">Scores</button>
+            <button onclick="switchGoTab('log')" class="go-tab" id="go-tab-log">Event Log</button>
+            <button onclick="switchGoTab('summary')" class="go-tab" id="go-tab-summary">My Summary</button>
+        </div>
         <div id="go-host-controls" style="display:none;width:100%;max-width:320px;margin-top:1rem;">
             <div style="font-family:'Cinzel',serif;font-size:0.7rem;letter-spacing:0.15em;color:var(--text-dim);margin-bottom:0.75rem;">HOST OPTIONS</div>
             <button class="gameover-btn" style="width:100%;margin-bottom:0.5rem;" onclick="hostNewGame(true)">Continue — Keep Points</button>
@@ -1321,7 +1349,7 @@
         const params = new URLSearchParams(location.search);
         const roomCode = params.get('room') || sessionStorage.getItem('mm_room_code') || '';
         const nickname = sessionStorage.getItem('mm_nickname') || 'Guest';
-
+        const gender = sessionStorage.getItem('mm_gender') || 'either';
         let ws = null;
         let myId = null;
         let gameState = null;
@@ -1370,6 +1398,14 @@
 
         function send(msg) {
             if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
+        }
+
+        function switchGoTab(tab) {
+            document.querySelectorAll('.go-tab').forEach(b => b.classList.remove('active'));
+            document.getElementById('go-tab-' + tab).classList.add('active');
+            document.getElementById('go-survivors').style.display = tab === 'scores' ? 'block' : 'none';
+            document.getElementById('go-event-log').style.display = tab === 'log' ? 'block' : 'none';
+            document.getElementById('go-char-summary').style.display = tab === 'summary' ? 'block' : 'none';
         }
 
         // ─── Message Handling ─────────────────────────────────────────────────────────
@@ -1460,6 +1496,13 @@
         function render() {
             if (!gameState || !me) return;
             me = gameState.players[myId];
+            if (prevMe && me) {
+                const newEntries = (me.feedbackLog || []).slice(prevMe.feedbackLog?.length || 0);
+                newEntries.forEach(e => {
+                    if (e.text.startsWith('🔍')) showNotif('🔍 You discovered a hidden clue!');
+                });
+            }
+            const prevMe = me ? { ...me, feedbackLog: [...(me.feedbackLog || [])] } : null;
             if (!me) return;
             me.trackerMarks = me.trackerMarks || {};
             me.trackerRoles = me.trackerRoles || {};
@@ -1518,23 +1561,38 @@
             const container = document.getElementById('journal-content');
             const phase = gameState.phase;
             let html = '';
-
+            if (gameState.lastVoteOutcome && ['discussion', 'night_action', 'night_feedback'].includes(phase)) {
+                html += `<div class="death-banner" style="border-color:var(--gold-dim);">
+                  <div class="death-name" style="color:var(--gold);font-size:0.85rem;">🗳 ${gameState.lastVoteOutcome}</div>
+                </div>`;
+            }
             // Death announcements
             // Show deaths from this round during night_feedback, or from previous round during day phases
-            const deathRound = ['night_feedback'].includes(phase) ? gameState.round : gameState.round - 1;
-            const roundDeaths = gameState.deathLog.filter(d => d.round === deathRound && phase !== 'role_reveal' && phase !== 'night_action');
+            let roundDeaths = [];
+            if (phase === 'voting' || phase === 'judge_save') {
+                roundDeaths = gameState.deathLog.filter(d => d.round === gameState.round && !d.isNightDeath);
+            } else if (phase === 'night_feedback') {
+                roundDeaths = gameState.deathLog.filter(d => d.round === gameState.round && d.isNightDeath);
+            } else if (phase === 'discussion') {
+                roundDeaths = gameState.deathLog.filter(d => d.round === gameState.round - 1 && !d.isNightDeath);
+            } else if (phase === 'night_action') {
+                roundDeaths = [];
+            }
             roundDeaths.forEach(d => {
-                html += `<div class="death-banner"><div class="death-name">☩ ${d.playerName}</div><div class="death-sub">${d.cause}</div></div>`;
+                const text = d.isNightDeath ? `☩ ${d.playerName} died last night.` : `🗳 ${d.playerName} was voted out.`;
+                html += `<div class="death-banner"><div class="death-name">${text}</div></div>`;
             });
 
             const actionHtml = renderActionPanel();
             if (actionHtml) html += actionHtml;
-
             // Character info
             html += `<div class="card">
             <div class="card-header"><span class="card-title">Character</span></div>
             <div class="card-body">
-              <div style="font-family:'Cinzel',serif;font-size:1rem;color:var(--gold);margin-bottom:0.25rem;">${me.name}</div>
+              // Replace the name line:
+              <div style="font-family:'Cinzel',serif;font-size:1rem;color:var(--gold);margin-bottom:0.25rem;${!me.alive ? 'text-decoration:line-through;opacity:0.6;' : ''}">${me.name}</div>
+              // Add below it if dead:
+              ${!me.alive ? '<div style="color:var(--crimson-pale);font-size:0.8rem;font-style:italic;margin-bottom:0.5rem;">☩ You have been eliminated</div>' : ''}
               <div style="font-size:0.82rem;color:var(--text-dim);font-style:italic;margin-bottom:0.75rem;">${me.nickname}</div>
               <div style="margin-bottom:0.5rem;font-size:0.82rem;"><span style="color:var(--text-dim)">Likes: </span>${(me.likes || []).map(l => `<span class="pref-tag like">${l}</span>`).join('')}</div>
               <div style="font-size:0.82rem;"><span style="color:var(--text-dim)">Dislikes: </span>${(me.dislikes || []).map(d => `<span class="pref-tag dislike">${d}</span>`).join('')}</div>
@@ -1708,6 +1766,11 @@
                 Psychic: 'Choose someone to receive a vision about.', Medium: 'Choose a dead player to learn their role.',
             };
 
+            // After the role description div, before the player-picker:
+            if (!['Assassin', 'Vigilante'].includes(role)) {
+                html += `<div class="picker-item${nightActionTarget === null ? ' selected' : ''}" onclick="selectNightTarget(null)">
+                  <div><div class="picker-item-name">No action</div><div class="picker-item-sub">Skip this night</div></div></div>`;
+            }
             const alivePlayers = Object.values(gameState.players).filter(p => p.alive && p.id !== myId);
             const targetPool = role === 'Medium' ? Object.values(gameState.players).filter(p => !p.alive) : alivePlayers;
 
@@ -1746,9 +1809,7 @@
             </div>`;
             }
 
-            const canSubmit = nightActionTarget !== undefined && (
-                ['Assassin', 'Vigilante'].includes(role) ? true : nightActionTarget !== null && nightActionTarget !== undefined
-            );
+            const canSubmit = nightActionTarget !== undefined;
 
             html += `<button class="submit-btn" onclick="submitNightAction()" ${!canSubmit ? 'disabled' : ''}>Submit Night Action</button>`;
             html += `</div></div>`;
@@ -2023,7 +2084,36 @@
             } else {
                 document.getElementById('ro-teammates').textContent = '';
             }
+            // Build pool display
+            const settings = gameState.settings;
+            let poolHtml = '';
+            if (settings && settings.rolePool) {
+                const p = settings.rolePool;
+                const allPooled = [...p.evilRoles, ...p.goodRoles, `Civilian ×${p.civilianCount}`];
+                poolHtml = allPooled.join(' · ');
+            } else if (gameState.defaultDistribution) {
+                const d = gameState.defaultDistribution;
+                const allPooled = [...d.evil, ...d.good, `Civilian ×${d.civilians}`];
+                poolHtml = allPooled.join(' · ');
+            }
             document.getElementById('role-overlay').classList.remove('hidden');
+            const pool = gameState.settings?.rolePool;
+            const dist = gameState.defaultDistribution;
+            let poolRoles = [];
+            if (pool) {
+                poolRoles = [
+                    ...pool.evilRoles.map(r => `<span style="color:#c87070">${r}</span>`),
+                    ...pool.goodRoles.map(r => `<span style="color:#4caf7a">${r}</span>`),
+                    `<span style="color:var(--text-dim)">Civilian ×${pool.civilianCount}</span>`
+                ];
+            } else if (dist) {
+                poolRoles = [
+                    ...dist.evil.map(r => `<span style="color:#c87070">${r}</span>`),
+                    ...dist.good.map(r => `<span style="color:#4caf7a">${r}</span>`),
+                    `<span style="color:var(--text-dim)">Civilian ×${dist.civilians}</span>`
+                ];
+            }
+            document.getElementById('ro-pool').innerHTML = poolRoles.join('<br>');
         }
 
         function hideRoleOverlay() { document.getElementById('role-overlay').classList.add('hidden'); }
@@ -2108,17 +2198,32 @@
 
             const players = Object.values(gameState.players).sort((a, b) => (b.cumulativePoints || 0) - (a.cumulativePoints || 0));
 
-            let survivorsHtml = `<h3>Leaderboard</h3>`;
+            let survivorsHtml = `<h3>Final Scores</h3>
+            <div style="font-size:0.62rem;font-family:'Cinzel',serif;letter-spacing:0.08em;color:var(--text-dim);display:grid;grid-template-columns:1fr 40px 40px 40px 40px 40px 50px;gap:2px;padding:0.3rem 0;border-bottom:1px solid var(--border);margin-bottom:0.25rem;">
+              <span>Player</span><span>Win</span><span>Sur</span><span>Obj</span><span>Role</span><span>Clue</span><span>Total</span>
+            </div>`;
+
             players.forEach(p => {
-                const roleColor = EVIL_ROLES.includes(p.role || '') ? 'var(--crimson-pale)' : 'var(--good-bright)';
-                survivorsHtml += `<div class="survivor-item">
-          <span>${p.name} <span style="font-size:0.7rem;color:var(--text-dim)">(${p.nickname})</span></span>
-          <span style="color:${roleColor};font-size:0.75rem">${p.role || '?'}</span>
-          <span style="color:var(--gold);font-family:'Cinzel',serif">${(p.cumulativePoints || 0).toFixed(2)}pts</span>
-        </div>
-        <div style="font-size:0.72rem;color:var(--text-dim);padding:0.2rem 0 0.4rem 0;border-bottom:1px solid var(--border);">
-          This game: ${(p.roundPoints || 0).toFixed(2)}pts · ${p.alive ? 'Survived' : 'Eliminated'}
-        </div>`;
+                const isEvil = EVIL_ROLES.includes(p.originalRole || '');
+                const roleColor = isEvil ? 'var(--crimson-pale)' : 'var(--good-bright)';
+                const bd = p.pointsBreakdown || {survive:0,win:0,clues:0,role:0,objectives:0};
+                const roleDisplay = (p.originalRole !== p.role)
+                    ? `${p.originalRole}→${p.role}`
+                    : p.role;
+                survivorsHtml += `
+                <div style="display:grid;grid-template-columns:1fr 40px 40px 40px 40px 40px 50px;gap:2px;padding:0.4rem 0;border-bottom:1px solid var(--border);align-items:center;">
+                  <div>
+                    <div style="font-family:'Cinzel',serif;font-size:0.75rem;">${p.name}</div>
+                    <div style="font-size:0.65rem;color:${roleColor};">${roleDisplay}</div>
+                    <div style="font-size:0.62rem;color:var(--text-dim);font-style:italic;">${p.nickname} · ${p.alive ? 'Survived' : 'Eliminated'}</div>
+                  </div>
+                  <span style="font-size:0.75rem;text-align:center;">${bd.win}</span>
+                  <span style="font-size:0.75rem;text-align:center;">${bd.survive}</span>
+                  <span style="font-size:0.75rem;text-align:center;">${bd.objectives}</span>
+                  <span style="font-size:0.75rem;text-align:center;">${bd.role}</span>
+                  <span style="font-size:0.75rem;text-align:center;">${bd.clues}</span>
+                  <span style="font-family:'Cinzel',serif;font-size:0.82rem;color:var(--gold);text-align:center;">${(p.cumulativePoints||0)}</span>
+                </div>`;
             });
             document.getElementById('go-survivors').innerHTML = survivorsHtml;
 
@@ -2129,6 +2234,30 @@
             }
 
             el.classList.remove('hidden');
+            // Event log — all deaths in order
+            const eventLogEl = document.getElementById('go-event-log');
+            const allEvents = [...gameState.deathLog].map(d =>
+                `<div style="padding:0.4rem 0;border-bottom:1px solid var(--border);font-size:0.82rem;">
+                  Round ${d.round}: ${d.isNightDeath ? `${d.playerName} died` : `${d.playerName} was voted out`}
+                 </div>`
+            );
+            eventLogEl.innerHTML = allEvents.join('') || '<div style="color:var(--text-dim);font-style:italic;padding:1rem;">No deaths recorded.</div>';
+
+            // Character summary
+            const me = gameState.players[myId];
+            if (me) {
+                const bd = me.pointsBreakdown || {};
+                document.getElementById('go-char-summary').innerHTML = `
+                  <div style="font-family:'Cinzel',serif;font-size:0.75rem;color:var(--gold);margin-bottom:0.75rem;">${me.name}</div>
+                  <div style="font-size:0.82rem;margin-bottom:0.5rem;">Role: <span style="color:${EVIL_ROLES.includes(me.originalRole||'') ? 'var(--crimson-pale)':'var(--good-bright)'}">${me.originalRole}${me.originalRole!==me.role?'→'+me.role:''}</span></div>
+                  <div style="font-size:0.82rem;margin-bottom:0.5rem;">Outcome: ${me.alive ? '✓ Survived' : '☩ Eliminated'}</div>
+                  <div style="font-size:0.82rem;margin-bottom:0.5rem;">Win: +${bd.win||0} · Survive: +${bd.survive||0} · Objectives: +${bd.objectives||0} · Role: +${bd.role||0} · Clues: +${bd.clues||0}</div>
+                  <div style="font-family:'Cinzel',serif;font-size:0.9rem;color:var(--gold);">Total this game: ${me.roundPoints||0} pts</div>
+                  <div style="margin-top:0.75rem;font-size:0.75rem;color:var(--text-dim);">Objectives:</div>
+                  ${(me.objectives||[]).map((o,i) => `<div style="padding:0.3rem 0;font-size:0.8rem;color:${me.objectivesCompleted?.[i]?'var(--good-bright)':'var(--text-dim)'};">${me.objectivesCompleted?.[i]?'✓':'○'} ${o}</div>`).join('')}
+                  <div style="margin-top:0.75rem;font-size:0.75rem;color:var(--text-dim);">Clues found: ${me.discoveredClues?.length||0}</div>
+                `;
+            }
         }
 
         // ─── Page Navigation ──────────────────────────────────────────────────────────

@@ -121,59 +121,90 @@
 
   <!-- Host settings -->
   <div class="section" id="settings-section" style="display:none">
-    <div class="section-title">Game Settings</div>
-    <div class="setting-row">
-      <div>
-        <div class="setting-label">Clue Mode</div>
-        <div class="setting-sub">Physical = paper codes to hide around room</div>
+      <div class="section-title">Game Settings</div>
+      <div class="setting-row">
+          <div>
+              <div class="setting-label">Clue Mode</div>
+              <div class="setting-sub">Physical = paper codes to hide around room</div>
+          </div>
+          <select id="setting-clue-mode" onchange="updateSetting('clueMode', this.value)">
+              <option value="virtual">Virtual</option>
+              <option value="physical">Physical</option>
+          </select>
       </div>
-      <select id="setting-clue-mode" onchange="updateSetting('clueMode', this.value)">
-        <option value="virtual">Virtual</option>
-        <option value="physical">Physical</option>
-      </select>
-    </div>
-    <div class="setting-row">
-      <div>
-        <div class="setting-label">Chat</div>
-        <div class="setting-sub">Global chat + DMs + evil team chat</div>
+      <div class="setting-row">
+          <div>
+              <div class="setting-label">Chat</div>
+              <div class="setting-sub">Global chat + DMs + evil team chat</div>
+          </div>
+          <label class="toggle">
+              <input type="checkbox" id="setting-chat" checked onchange="updateSetting('chatEnabled', this.checked)">
+              <span class="toggle-slider"></span>
+          </label>
       </div>
-      <label class="toggle">
-        <input type="checkbox" id="setting-chat" checked onchange="updateSetting('chatEnabled', this.checked)">
-        <span class="toggle-slider"></span>
-      </label>
-    </div>
-    <div class="setting-row">
-      <div>
-        <div class="setting-label">Jailor</div>
-        <div class="setting-sub">Replaces Vigilante at 12+ players</div>
+      <div class="setting-row">
+          <div>
+              <div class="setting-label">Jailor</div>
+              <div class="setting-sub">Replaces Vigilante at 12+ players</div>
+          </div>
+          <label class="toggle">
+              <input type="checkbox" id="setting-jailor" checked onchange="updateSetting('jailorEnabled', this.checked)">
+              <span class="toggle-slider"></span>
+          </label>
       </div>
-      <label class="toggle">
-        <input type="checkbox" id="setting-jailor" checked onchange="updateSetting('jailorEnabled', this.checked)">
-        <span class="toggle-slider"></span>
-      </label>
-    </div>
-    <div class="setting-row">
-      <div>
-        <div class="setting-label">Vigilante</div>
-        <div class="setting-sub">Both can be active at 16 players</div>
+      <div class="setting-row">
+          <div>
+              <div class="setting-label">Vigilante</div>
+              <div class="setting-sub">Both can be active at 16 players</div>
+          </div>
+          <label class="toggle">
+              <input type="checkbox" id="setting-vigilante" onchange="updateSetting('vigilanteEnabled', this.checked)">
+              <span class="toggle-slider"></span>
+          </label>
       </div>
-      <label class="toggle">
-        <input type="checkbox" id="setting-vigilante" onchange="updateSetting('vigilanteEnabled', this.checked)">
-        <span class="toggle-slider"></span>
-      </label>
-    </div>
-    <div class="setting-row">
-      <div>
-        <div class="setting-label">Day 1 Night Skip (7 players)</div>
-        <div class="setting-sub">Murderer + Spy skip Night 1</div>
+      <div class="setting-row">
+          <div>
+              <div class="setting-label">Day 1 Night Skip (7 players)</div>
+              <div class="setting-sub">Murderer + Spy skip Night 1</div>
+          </div>
+          <label class="toggle">
+              <input type="checkbox" id="setting-day1skip" checked onchange="updateSetting('day1NightSkip', this.checked)">
+              <span class="toggle-slider"></span>
+          </label>
       </div>
-      <label class="toggle">
-        <input type="checkbox" id="setting-day1skip" checked onchange="updateSetting('day1NightSkip', this.checked)">
-        <span class="toggle-slider"></span>
-      </label>
-    </div>
-  </div>
+      <div class="setting-row">
+          <div>
+              <div class="setting-label">Lock Lobby</div>
+              <div class="setting-sub">Prevent new players from joining</div>
+          </div>
 
+          <label class="toggle">
+              <input type="checkbox" id="setting-lock"
+                     onclick="toggleLock(this.checked)">
+              <span class="toggle-slider"></span>
+          </label>
+      </div>
+  </div>
+    <!-- Role Pool Builder (host only) -->
+    <div class="section" id="role-builder-section" style="display:none">
+      <div class="section-title">Role Pool</div>
+
+      <!-- Slot counters -->
+      <div id="slot-controls" style="display:flex;flex-direction:column;gap:0.75rem;margin-bottom:1rem;"></div>
+
+      <!-- Role toggles by category -->
+      <div id="role-builder-evil" style="margin-bottom:1rem;">
+        <div style="font-family:'Cinzel',serif;font-size:0.65rem;letter-spacing:0.15em;color:#c87070;margin-bottom:0.5rem;">EVIL ROLES</div>
+        <div id="evil-role-toggles" style="display:flex;flex-direction:column;gap:0.4rem;"></div>
+      </div>
+      <div id="role-builder-good" style="margin-bottom:1rem;">
+        <div style="font-family:'Cinzel',serif;font-size:0.65rem;letter-spacing:0.15em;color:#4caf7a;margin-bottom:0.5rem;">GOOD ROLES</div>
+        <div id="good-role-toggles" style="display:flex;flex-direction:column;gap:0.4rem;"></div>
+      </div>
+
+      <div id="role-pool-warnings" style="margin-bottom:0.75rem;"></div>
+      <div id="role-pool-preview" style="font-size:0.8rem;color:var(--text-dim);font-style:italic;"></div>
+    </div>
   <!-- Physical clue codes (host only, when physical mode) -->
   <div class="section" id="clue-codes-section" style="display:none">
     <div class="section-title">Hidden Clue Codes</div>
@@ -216,6 +247,38 @@
   let ws = null;
   let gameState = null;
   let selectedChar = null;
+    const ALL_ROLES_META = [
+        { role: "Murderer", alignment: "Evil", rec: null },
+        { role: "Assassin", alignment: "Evil", rec: 14 },
+        { role: "Spy", alignment: "Evil", rec: null },
+        { role: "Witch", alignment: "Evil", rec: 11 },
+        { role: "Doctor", alignment: "Good", rec: null },
+        { role: "Detective", alignment: "Good", rec: null },
+        { role: "Judge", alignment: "Good", rec: null },
+        { role: "Mayor", alignment: "Good", rec: null },
+        { role: "Psychic", alignment: "Good", rec: 10 },
+        { role: "Medium", alignment: "Good", rec: 13 },
+        { role: "Coroner", alignment: "Good", rec: 14 },
+        { role: "Jailor", alignment: "Good", rec: 12 },
+        { role: "Vigilante", alignment: "Good", rec: 12 },
+    ];
+
+    const DEFAULT_DISTRIBUTIONS = {
+        6: { evil: ["Murderer"], good: ["Doctor", "Judge"], civilians: 3 },
+        7: { evil: ["Murderer", "Spy"], good: ["Doctor", "Judge", "Mayor"], civilians: 2 },
+        8: { evil: ["Murderer", "Spy"], good: ["Doctor", "Judge", "Mayor", "Detective"], civilians: 2 },
+        9: { evil: ["Murderer", "Spy"], good: ["Doctor", "Judge", "Mayor", "Detective"], civilians: 3 },
+        10: { evil: ["Murderer", "Spy"], good: ["Doctor", "Judge", "Mayor", "Detective", "Psychic"], civilians: 3 },
+        11: { evil: ["Murderer", "Spy", "Witch"], good: ["Doctor", "Judge", "Mayor", "Detective", "Psychic"], civilians: 3 },
+        12: { evil: ["Murderer", "Spy", "Witch"], good: ["Doctor", "Judge", "Mayor", "Detective", "Psychic", "Jailor"], civilians: 3 },
+        13: { evil: ["Murderer", "Spy", "Witch"], good: ["Doctor", "Judge", "Mayor", "Detective", "Psychic", "Jailor", "Medium"], civilians: 3 },
+        14: { evil: ["Murderer", "Assassin", "Spy", "Witch"], good: ["Doctor", "Judge", "Mayor", "Detective", "Psychic", "Jailor", "Medium", "Coroner"], civilians: 2 },
+        15: { evil: ["Murderer", "Assassin", "Spy", "Witch"], good: ["Doctor", "Judge", "Mayor", "Detective", "Psychic", "Jailor", "Medium", "Coroner"], civilians: 3 },
+        16: { evil: ["Murderer", "Assassin", "Spy", "Witch"], good: ["Doctor", "Judge", "Mayor", "Detective", "Psychic", "Jailor", "Medium", "Coroner", "Vigilante"], civilians: 2 },
+    };
+
+    // Local role pool state (host UI only)
+    let rolePoolState = null; // null until first render, then { evilSlots, goodSlots, civilianCount, evilRoles, goodRoles }
 
   document.getElementById('room-code-display').textContent = roomCode;
   if (isHost) {
@@ -224,6 +287,180 @@
   } else {
     document.getElementById('guest-wait').style.display = 'block';
   }
+
+    function initRolePool(playerCount) {
+        const dist = DEFAULT_DISTRIBUTIONS[playerCount] || DEFAULT_DISTRIBUTIONS[Math.max(6, Math.min(playerCount, 16))];
+        // Clamp to actual player count in case dist doesn't match
+        const safeEvil = Math.min(dist.evil.length, Math.max(1, playerCount - 1));
+        const safeGood = Math.min(dist.good.length, Math.max(0, playerCount - safeEvil));
+        const safeCiv = playerCount - safeEvil - safeGood;
+        rolePoolState = {
+            evilSlots: safeEvil,
+            goodSlots: safeGood,
+            civilianCount: Math.max(0, safeCiv),
+            evilRoles: dist.evil.slice(0, safeEvil),
+            goodRoles: dist.good.slice(0, safeGood),
+            _playerCount: playerCount,
+        };
+    }
+
+    function toggleLock(val) {
+        safeSend({
+            type: 'host_lock_lobby',
+            locked: val
+        });
+    }
+
+    function renderRoleBuilder() {
+        if (!isHost) return;
+        const count = gameState ? Object.values(gameState.players).length : 0;
+        if (count < 1) {
+            document.getElementById('role-builder-section').style.display = 'none';
+            return;
+        }
+        // Show the section even for 1 player
+        document.getElementById('role-builder-section').style.display = 'block';
+
+        if (!rolePoolState) initRolePool(count);
+
+        const { evilSlots, goodSlots, civilianCount, evilRoles, goodRoles } = rolePoolState;
+        const total = evilSlots + goodSlots + civilianCount;
+        const maxEvil = count - rolePoolState.goodSlots - rolePoolState.civilianCount;
+        const maxGood = count - rolePoolState.evilSlots - rolePoolState.civilianCount;
+        const maxCiv = count - rolePoolState.evilSlots - rolePoolState.goodSlots;
+        // Slot controls
+        const slotHtml = `
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:3px;padding:0.75rem;">
+      <div style="font-family:'Cinzel',serif;font-size:0.65rem;letter-spacing:0.15em;color:var(--gold);margin-bottom:0.5rem;">
+        SLOTS — Total: <span style="color:${total === count ? 'var(--good-bright)' : 'var(--crimson-bright)'}">${total}/${count}</span>
+      </div>
+
+
+    ${renderSlotRow('Evil', evilSlots, 1, maxEvil, '#c87070', 'evil')}
+    ${renderSlotRow('Good', goodSlots, 0, maxGood, '#4caf7a', 'good')}
+    ${renderSlotRow('Civilian', civilianCount, 0, maxCiv, 'var(--text-dim)', 'civilian')}
+    </div>`;
+        document.getElementById('slot-controls').innerHTML = slotHtml;
+
+        // Evil role toggles
+        const evilMeta = ALL_ROLES_META.filter(r => r.alignment === 'Evil');
+        document.getElementById('evil-role-toggles').innerHTML = evilMeta.map(r => renderRoleToggle(r, evilRoles, count)).join('');
+
+        // Good role toggles
+        const goodMeta = ALL_ROLES_META.filter(r => r.alignment === 'Good');
+        document.getElementById('good-role-toggles').innerHTML = goodMeta.map(r => renderRoleToggle(r, goodRoles, count)).join('');
+
+        // Warnings
+        const warnings = [];
+        const allSelected = [...evilRoles, ...goodRoles];
+        allSelected.forEach(role => {
+            const meta = ALL_ROLES_META.find(r => r.role === role);
+            if (meta && meta.rec && count < meta.rec) {
+                warnings.push(`⚠ ${role} is recommended for ${meta.rec}+ players`);
+            }
+        });
+        if (!evilRoles.includes('Murderer')) {
+            warnings.push('⚠ Murderer is required and will always be assigned');
+        }
+        // Underfilled slots
+        if (evilRoles.length < evilSlots) {
+            warnings.push(`⚠ Evil: only ${evilRoles.length} role(s) selected for ${evilSlots} slot(s) — add more or reduce slots`);
+        }
+        if (goodRoles.length < goodSlots) {
+            warnings.push(`⚠ Good: only ${goodRoles.length} role(s) selected for ${goodSlots} slot(s) — add more or reduce slots`);
+        }
+        document.getElementById('role-pool-warnings').innerHTML = warnings.map(w =>
+            `<div style="font-size:0.78rem;color:var(--gold);margin-bottom:0.3rem;">${w}</div>`
+        ).join('');
+
+        // Preview
+        const evBadges = evilRoles.map(r => `<span style="color:#c87070">${r}</span>`).join(', ');
+        const goodBadges = goodRoles.map(r => `<span style="color:#4caf7a">${r}</span>`).join(', ');
+        const civBadge = `<span style="color:var(--text-dim)">Civilian ×${civilianCount}</span>`;
+        document.getElementById('role-pool-preview').innerHTML =
+            `Pool: ${evBadges}${evilRoles.length ? ', ' : ''}${goodBadges}${goodRoles.length ? ', ' : ''}${civBadge}`;
+    }
+
+    function renderSlotRow(label, value, min, max, color, type) {
+        const minusDisabled = value <= min;
+        const plusDisabled = value >= max;
+        return `<div style="display:flex;align-items:center;gap:0.75rem;padding:0.35rem 0;">
+    <span style="font-family:'Cinzel',serif;font-size:0.72rem;color:${color};width:60px">${label}</span>
+    <button onclick="adjustSlot('${type}',-1)" style="background:var(--surface);border:1px solid var(--border);border-radius:2px;width:24px;height:24px;color:var(--text);cursor:pointer;font-size:1rem;line-height:1;" ${minusDisabled ? 'disabled style="opacity:0.3;cursor:not-allowed;"' : ''}>−</button>
+    <span style="font-family:'Cinzel',serif;font-size:0.9rem;color:${color};min-width:20px;text-align:center">${value}</span>
+    <button onclick="adjustSlot('${type}',1)" style="background:var(--surface);border:1px solid var(--border);border-radius:2px;width:24px;height:24px;color:var(--text);cursor:pointer;font-size:1rem;line-height:1;" ${plusDisabled ? 'disabled style="opacity:0.3;cursor:not-allowed;"' : ''}>+</button>
+  </div>`;
+    }
+
+    function renderRoleToggle(meta, selectedRoles, playerCount) {
+        const isOn = selectedRoles.includes(meta.role);
+        const isRequired = meta.role === 'Murderer';
+        const underRec = meta.rec && playerCount < meta.rec;
+        return `<div style="display:flex;align-items:center;gap:0.6rem;padding:0.4rem 0.6rem;background:var(--surface2);border-radius:3px;border:1px solid ${isOn ? (meta.alignment === 'Evil' ? '#7a1a1a' : '#2a5c3f') : 'var(--border)'};">
+    <label class="toggle" style="flex-shrink:0;">
+      <input type="checkbox" ${isOn ? 'checked' : ''} ${isRequired ? 'disabled' : ''}
+        onchange="toggleRole('${meta.alignment.toLowerCase()}','${meta.role}',this.checked)">
+      <span class="toggle-slider"></span>
+    </label>
+    <div style="flex:1;">
+      <div style="font-family:'Cinzel',serif;font-size:0.78rem;color:${isOn ? (meta.alignment === 'Evil' ? '#c87070' : '#4caf7a') : 'var(--text-dim)'};">
+        ${meta.role}${isRequired ? ' <span style="font-size:0.62rem;color:var(--text-dim)">(required)</span>' : ''}
+      </div>
+      ${underRec ? `<div style="font-size:0.65rem;color:var(--gold);">Recommended ${meta.rec}+ players</div>` : ''}
+    </div>
+  </div>`;
+    }
+
+    function adjustSlot(type, delta) {
+        if (!rolePoolState) return;
+        const count = gameState ? Object.values(gameState.players).length : 1;
+
+        if (type === 'evil') {
+            const newVal = rolePoolState.evilSlots + delta;
+            const remaining = count - rolePoolState.goodSlots - rolePoolState.civilianCount;
+            if (newVal < 1 || newVal > remaining) return;
+            rolePoolState.evilSlots = newVal;
+        } else if (type === 'good') {
+            const newVal = rolePoolState.goodSlots + delta;
+            const remaining = count - rolePoolState.evilSlots - rolePoolState.civilianCount;
+            if (newVal < 0 || newVal > remaining) return;
+            rolePoolState.goodSlots = newVal;
+        } else if (type === 'civilian') {
+            const newVal = rolePoolState.civilianCount + delta;
+            const remaining = count - rolePoolState.evilSlots - rolePoolState.goodSlots;
+            if (newVal < 0 || newVal > remaining) return;
+            rolePoolState.civilianCount = newVal;
+        }
+        renderRoleBuilder();
+        sendRolePool();
+    }
+
+    function toggleRole(alignment, role, checked) {
+        if (!rolePoolState) return;
+        if (alignment === 'evil') {
+            if (checked) { if (!rolePoolState.evilRoles.includes(role)) rolePoolState.evilRoles.push(role); }
+            else { rolePoolState.evilRoles = rolePoolState.evilRoles.filter(r => r !== role); }
+        } else {
+            if (checked) { if (!rolePoolState.goodRoles.includes(role)) rolePoolState.goodRoles.push(role); }
+            else { rolePoolState.goodRoles = rolePoolState.goodRoles.filter(r => r !== role); }
+        }
+        renderRoleBuilder();
+        sendRolePool();
+    }
+
+    function sendRolePool() {
+        if (!rolePoolState) return;
+        safeSend({
+            type: 'host_configure_roles',
+            rolePool: {
+                evilRoles: rolePoolState.evilRoles,
+                goodRoles: rolePoolState.goodRoles,
+                civilianCount: rolePoolState.civilianCount,
+                evilSlots: rolePoolState.evilSlots,
+                goodSlots: rolePoolState.goodSlots,
+            }
+        });
+    }
 
   function copyCode() {
     navigator.clipboard.writeText(roomCode).then(() => showNotif('Code copied!')).catch(() => {});
@@ -273,7 +510,17 @@
         selectedChar = charId;
         sessionStorage.setItem('mm_char_id', charId);
         renderCharGrid();
-        safeSend({ type: 'join', characterId: charId, nickname });
+        const gender = sessionStorage.getItem('mm_gender') || 'either';
+        safeSend({ type: 'join', characterId: charId, nickname, gender });
+    }
+
+    function kickPlayer(id) {
+        if (confirm('Remove this player?')) {
+            safeSend({
+                type: 'host_kick_player',
+                targetId: id
+            });
+        }
     }
 
   function renderPlayers() {
@@ -284,6 +531,7 @@
 
     if (players.length === 0) {
       list.innerHTML = '<div class="wait-msg">Waiting for players to join...</div>';
+      renderRoleBuilder();
       return;
     }
 
@@ -293,15 +541,27 @@
       div.className = 'player-item';
       const initials = (p.nickname || p.name).slice(0,2).toUpperCase();
       const isMe = p.id === myId;
-      div.innerHTML = `
-        <div class="player-avatar">${initials}</div>
-        <div class="player-info">
-          <div class="player-name">${p.nickname}${isMe ? ' (you)' : ''}</div>
-          <div class="player-char">${p.name || 'Choosing character...'}</div>
-        </div>
-        ${p.id === gameState.hostId ? '<span class="host-badge">HOST</span>' : ''}
-        ${!p.connected ? '<span style="color:var(--text-dim);font-size:0.7rem;">⚠ disconnected</span>' : ''}
-      `;
+        div.innerHTML = `
+          <div class="player-avatar">${initials}</div>
+
+          <div class="player-info">
+            <div class="player-name">${p.nickname}${isMe ? ' (you)' : ''}</div>
+            <div class="player-char">${p.name || 'Choosing character...'}</div>
+          </div>
+
+          ${p.id === gameState.hostId ? '<span class="host-badge">HOST</span>' : ''}
+
+          ${!p.connected
+              ? '<span style="color:var(--text-dim);font-size:0.7rem;">⚠ disconnected</span>'
+              : ''}
+
+          ${isHost && p.id !== myId
+              ? `<button onclick="kickPlayer('${p.id}')"
+                  style="font-size:0.65rem;background:var(--crimson);border:1px solid var(--crimson-bright);border-radius:2px;padding:0.2rem 0.5rem;color:var(--text);cursor:pointer;font-family:'Cinzel',serif;">
+                  Kick
+                 </button>`
+              : ''}
+        `;
       list.appendChild(div);
     });
 
@@ -310,9 +570,20 @@
       const startBtn = document.getElementById('start-btn');
       const count = players.length;
       const allChosen = players.every(p => p.name);
-      startBtn.disabled = count < 1 || count > 16 || !allChosen;
-      startBtn.textContent = 'Start Game';
+        const pool = rolePoolState;
+        const poolValid = pool &&
+            pool.evilSlots + pool.goodSlots + pool.civilianCount === count &&
+            pool.evilRoles.length >= pool.evilSlots &&
+            pool.goodRoles.length >= pool.goodSlots;
+        startBtn.disabled = count < 1 || count > 16 || !allChosen || !poolValid;
+        startBtn.textContent = !poolValid ? 'Fix role pool to start' : 'Start Game';
     }
+      const newCount = players.length;
+      const countChanged = !rolePoolState || rolePoolState._playerCount !== newCount;
+      if (countChanged) {
+          initRolePool(newCount);
+      }
+      renderRoleBuilder();
   }
 
   function updateSetting(key, value) {
@@ -334,11 +605,11 @@
     ws = new WebSocket(url);
 
     ws.onopen = () => {
-          console.log('[MM] WebSocket connected!');
-      // Auto-join if we had a character selected
-      if (selectedChar) {
-        ws.send(JSON.stringify({ type: 'join', characterId: selectedChar, nickname }));
-      }
+        if (!isHost) {
+            ws.send(JSON.stringify({ type: 'join_check' }));
+        } else {
+            if (selectedChar) ws.send(JSON.stringify({ type: 'join', characterId: selectedChar, nickname, gender }));
+        }
     };
 
     ws.onmessage = (e) => {
@@ -359,6 +630,17 @@
             case 'room_created':
                 break;
             case 'room_exists':
+                break;
+            case 'room_not_found':
+                alert("Couldn't find that lobby. Make sure the host has created the room first.");
+                window.location.href = 'index.html';
+                break;
+            case 'room_ok':
+                if (selectedChar) safeSend({ type: 'join', characterId: selectedChar, nickname, gender });
+                break;
+            case 'kicked':
+                alert('You were removed from the lobby.');
+                window.location.href = 'index.html';
                 break;
             case 'state_update':
                 myId = msg.myId;
