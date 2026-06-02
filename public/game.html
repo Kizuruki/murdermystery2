@@ -1388,7 +1388,7 @@
             ws.onopen = () => {
                 const charId = sessionStorage.getItem('mm_char_id');
                 const nick = sessionStorage.getItem('mm_nickname') || 'Guest';
-                if (charId) send({ type: 'join', characterId: charId, nickname: nick });
+                if (charId) send({ type: 'join', characterId: charId, nickname: nick, gender: sessionStorage.getItem('mm_gender') || 'either' });
                 send({ type: 'request_state' });
             };
             ws.onmessage = (e) => { try { handleMessage(JSON.parse(e.data)); } catch (err) { console.error(err); } };
@@ -1495,6 +1495,7 @@
         // ─── Main Render ──────────────────────────────────────────────────────────────
         function render() {
             if (!gameState || !me) return;
+            const prevMe = me ? { ...me, feedbackLog: [...(me.feedbackLog || [])] } : null;
             me = gameState.players[myId];
             if (prevMe && me) {
                 const newEntries = (me.feedbackLog || []).slice(prevMe.feedbackLog?.length || 0);
@@ -1502,7 +1503,6 @@
                     if (e.text.startsWith('🔍')) showNotif('🔍 You discovered a hidden clue!');
                 });
             }
-            const prevMe = me ? { ...me, feedbackLog: [...(me.feedbackLog || [])] } : null;
             if (!me) return;
             me.trackerMarks = me.trackerMarks || {};
             me.trackerRoles = me.trackerRoles || {};
@@ -1589,9 +1589,7 @@
             html += `<div class="card">
             <div class="card-header"><span class="card-title">Character</span></div>
             <div class="card-body">
-              // Replace the name line:
               <div style="font-family:'Cinzel',serif;font-size:1rem;color:var(--gold);margin-bottom:0.25rem;${!me.alive ? 'text-decoration:line-through;opacity:0.6;' : ''}">${me.name}</div>
-              // Add below it if dead:
               ${!me.alive ? '<div style="color:var(--crimson-pale);font-size:0.8rem;font-style:italic;margin-bottom:0.5rem;">☩ You have been eliminated</div>' : ''}
               <div style="font-size:0.82rem;color:var(--text-dim);font-style:italic;margin-bottom:0.75rem;">${me.nickname}</div>
               <div style="margin-bottom:0.5rem;font-size:0.82rem;"><span style="color:var(--text-dim)">Likes: </span>${(me.likes || []).map(l => `<span class="pref-tag like">${l}</span>`).join('')}</div>
@@ -1766,23 +1764,25 @@
                 Psychic: 'Choose someone to receive a vision about.', Medium: 'Choose a dead player to learn their role.',
             };
 
-            // After the role description div, before the player-picker:
-            if (!['Assassin', 'Vigilante'].includes(role)) {
-                html += `<div class="picker-item${nightActionTarget === null ? ' selected' : ''}" onclick="selectNightTarget(null)">
-                  <div><div class="picker-item-name">No action</div><div class="picker-item-sub">Skip this night</div></div></div>`;
-            }
             const alivePlayers = Object.values(gameState.players).filter(p => p.alive && p.id !== myId);
             const targetPool = role === 'Medium' ? Object.values(gameState.players).filter(p => !p.alive) : alivePlayers;
 
             let html = `<div class="action-panel">
-            <div class="action-header">☾ NIGHT ${round} — ${ROLE_ICONS[role] || ''} ${role}</div>
-            <div class="action-body">
-              <div style="font-size:0.82rem;color:var(--text-dim);font-style:italic;margin-bottom:0.75rem;">${roleDescs[role] || ''}</div>
-              <div class="player-picker">`;
+              <div class="action-header">...</div>
+              <div class="action-body">
+                <div style="...desc...">${roleDescs[role]}</div>
+                <div class="player-picker">`;
 
-            if (['Assassin', 'Vigilante'].includes(role)) {
+            // No action option first, inside the picker
+            if (!['Assassin','Vigilante'].includes(role)) {
                 html += `<div class="picker-item${nightActionTarget === null ? ' selected' : ''}" onclick="selectNightTarget(null)">
-              <div><div class="picker-item-name">Don't use</div><div class="picker-item-sub">Save for later</div></div></div>`;
+                  <div><div class="picker-item-name">No action</div><div class="picker-item-sub">Skip this night</div></div></div>`;
+            }
+
+            // Then the "Don't use" option for Assassin/Vigilante
+            if (['Assassin','Vigilante'].includes(role)) {
+                html += `<div class="picker-item${nightActionTarget === null ? ' selected' : ''}" onclick="selectNightTarget(null)">
+                  <div><div class="picker-item-name">Don't use</div><div class="picker-item-sub">Save for later</div></div></div>`;
             }
 
             targetPool.forEach(p => {
@@ -2086,16 +2086,6 @@
             }
             // Build pool display
             const settings = gameState.settings;
-            let poolHtml = '';
-            if (settings && settings.rolePool) {
-                const p = settings.rolePool;
-                const allPooled = [...p.evilRoles, ...p.goodRoles, `Civilian ×${p.civilianCount}`];
-                poolHtml = allPooled.join(' · ');
-            } else if (gameState.defaultDistribution) {
-                const d = gameState.defaultDistribution;
-                const allPooled = [...d.evil, ...d.good, `Civilian ×${d.civilians}`];
-                poolHtml = allPooled.join(' · ');
-            }
             document.getElementById('role-overlay').classList.remove('hidden');
             const pool = gameState.settings?.rolePool;
             const dist = gameState.defaultDistribution;

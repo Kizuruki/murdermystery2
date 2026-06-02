@@ -76,6 +76,7 @@ interface Player {
     likes: string[];
     dislikes: string[];
     startingClues: Clue[];
+    characterId: string;
     discoveredClues: string[];
     sharedClues: string[];
     objectives: string[];
@@ -846,7 +847,7 @@ type ClientMessage =
     | { type: "objective_complete"; objectiveIndex: number; targetPlayerId: string }
     | { type: "request_state" }
     | { type: "join_check" }
-    | { type: "timer_tick" } // NEW: client-driven timer advancement
+    | { type: "timer_tick" }
     | { type: "update_objective_selection"; objectiveIndex: number; targetPlayerId: string | null };
 
 // ─── Server ───────────────────────────────────────────────────────────────────
@@ -883,8 +884,10 @@ export default class MurderMysteryServer implements Party.Server {
 
     onMessage(message: string, sender: Party.Connection) {
         if (!this.state) return;
-        let msg: ClientMessage;
-        try { msg = JSON.parse(message); } catch { return; }
+        const msg: ClientMessage = (() => {
+            try { return JSON.parse(message); } catch { return null; }
+        })();
+        if (!msg) return;
 
         const state = this.state;
         const isHost = sender.id === state.hostId;
@@ -954,7 +957,7 @@ export default class MurderMysteryServer implements Party.Server {
                     return;
                 }
                 const existingByName = Object.values(state.players).find(
-                    p => p.nickname === msg.nickname && p.name === displayName && p.id !== sender.id
+                    p => p.nickname === msg.nickname && p.characterId === msg.characterId && p.id !== sender.id
                 );
                 if (existingByName) {
                     const oldId = existingByName.id;
@@ -969,7 +972,11 @@ export default class MurderMysteryServer implements Party.Server {
                     break;
                 }
 
-                const taken = Object.values(state.players).find(p => p.id !== sender.id && p.name === displayName);
+                const taken = Object.values(state.players).find(p => p.id !== sender.id && p.characterId === msg.characterId);
+                if (taken) {
+                    sender.send(JSON.stringify({ type: "error", message: "Character already taken" }));
+                    return;
+                }
                 if (taken) {
                     sender.send(JSON.stringify({ type: "error", message: "Character already taken" }));
                     return;
@@ -980,9 +987,11 @@ export default class MurderMysteryServer implements Party.Server {
                     existing.nickname = msg.nickname;
                     existing.name = displayName;
                     existing.gender = msg.gender || "either";
+                    existing.characterId = msg.characterId;
                 } else {
                     const newPlayer = this.createPlayer(sender.id, displayName, msg.nickname);
                     newPlayer.gender = msg.gender || "either";
+                    newPlayer.characterId = msg.characterId;
                     state.players[sender.id] = newPlayer;
                 }
                 this.broadcastState();
@@ -1393,6 +1402,7 @@ export default class MurderMysteryServer implements Party.Server {
             alive.forEach(p => {
                 p.feedbackLog.push({ round: state.round, phase: "day", text: `🗳 ${savedPlayer?.name} was to be voted out, but was saved by the Judge.` });
             });
+            state.lastVoteOutcome = `${savedPlayer?.name} was to be voted out, but was saved by the Judge.`;
             this.proceedToNight();
             return;
         }
@@ -1402,6 +1412,7 @@ export default class MurderMysteryServer implements Party.Server {
             alive.forEach(p => {
                 p.feedbackLog.push({ round: state.round, phase: "day", text: `🗳 No one was voted out (${reason}).` });
             });
+            state.lastVoteOutcome = `No one was voted out (${reason}).`;
             this.proceedToNight();
             return;
         }
@@ -1409,7 +1420,7 @@ export default class MurderMysteryServer implements Party.Server {
         const eliminated = state.players[candidates[0]];
         if (eliminated) {
             eliminated.alive = false;
-            state.deathLog.push({ round: state.round, playerName: eliminated.name, cause: "Voted out" });
+            state.deathLog.push({ round: state.round, playerName: eliminated.name, cause: "Voted out", isNightDeath: false });
             checkSuccession(state);
 
             // Broadcast vote outcome to all alive players
@@ -1434,7 +1445,7 @@ export default class MurderMysteryServer implements Party.Server {
             this.broadcastState();
             return;
         }
-
+        state.lastVoteOutcome = `${eliminated.name} was voted out.`;
         this.proceedToNight();
     }
 
@@ -1465,6 +1476,7 @@ export default class MurderMysteryServer implements Party.Server {
 
             players[p.id] = {
                 id: p.id,
+                characterId: p.characterId,
                 name: p.name,
                 nickname: p.nickname,
                 alive: p.alive,
@@ -1618,6 +1630,7 @@ export default class MurderMysteryServer implements Party.Server {
             pointsBreakdown: null,
             jailedHistory: [],
             gender: "either",
+            characterId: "",
             objectiveSelections: [null, null],
             trackerMarks: {}, trackerRoles: {},
             votePower: 1, mayorPenaltyNextRound: false,

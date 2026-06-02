@@ -243,6 +243,7 @@
   const roomCode = params.get('room') || sessionStorage.getItem('mm_room_code') || '';
   const isHost = params.has('host') || sessionStorage.getItem('mm_is_host') === 'true';
   const nickname = sessionStorage.getItem('mm_nickname') || 'Guest';
+  const gender = sessionStorage.getItem('mm_gender') || 'either';
   let myId = null;
   let ws = null;
   let gameState = null;
@@ -483,7 +484,7 @@
       btn.dataset.id = char.id;
 
       // Check if taken
-      const taker = gameState ? Object.values(gameState.players).find(p => p.name === char.name) : null;
+      const taker = gameState ? Object.values(gameState.players).find(p => p.characterId === char.id) : null;
       if (taker) {
         if (taker.id === myId) {
           btn.classList.add('selected');
