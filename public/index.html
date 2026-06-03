@@ -307,7 +307,7 @@
         document.querySelectorAll('.gender-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
     }
-  const PARTYKIT_HOST = "localhost:1999"; // ← replace with your partykit host
+  const PARTYKIT_HOST = "murder-mystery.kizuruki.partykit.dev"; // ← replace with your partykit host
 
   function switchTab(tab) {
     document.querySelectorAll('.tab-btn').forEach((b,i) => b.classList.toggle('active', (tab==='create'&&i===0)||(tab==='join'&&i===1)));

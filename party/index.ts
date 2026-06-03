@@ -472,15 +472,28 @@ function resolveNight(state: GameState): NightResult {
         const target = get(actions[vigilante.id].targetId!);
         vigilante.vigilanteUsed = true;
         if (target.alignment === "Evil") {
-            result.killed.push(target.id);
-            result.deathEntries.push({ round: state.round, playerName: target.name, cause: "Vigilante kill", isNightDeath: true });
-            result.feedbacks[vigilante.id].push(`You shot ${target.name}. They were Evil. You survived.`);
-            vigilante.vigilanteKilledEvil = true;
+            const doctorSavedTarget = doctor && !isJailed(doctor.id) && actions[doctor.id]?.targetId === target.id;
+            if (!doctorSavedTarget) {
+                result.killed.push(target.id);
+                result.deathEntries.push({ round: state.round, playerName: target.name, cause: "Vigilante kill", isNightDeath: true });
+                result.feedbacks[vigilante.id].push(`You shot ${target.name}. They were Evil. You survived.`);
+                vigilante.vigilanteKilledEvil = true;
+            } else {
+                result.feedbacks[vigilante.id].push(`You shot ${target.name}. They were Evil but were saved by the Doctor.`);
+                result.saved.push(target.id);
+            }
         } else {
-            result.killed.push(vigilante.id);
-            result.deathEntries.push({ round: state.round, playerName: vigilante.name, cause: "Failed vigilante attempt", isNightDeath: true });
-            result.feedbacks[vigilante.id].push(`You shot ${target.name}. They were Good. You have died.`);
-            if (result.feedbacks[target.id]) result.feedbacks[target.id].push("The Vigilante targeted you, but you were innocent. They perished instead.");
+            const doctorSavedVigilante = doctor && !isJailed(doctor.id) && actions[doctor.id]?.targetId === vigilante.id;
+            if (doctorSavedVigilante) {
+                result.feedbacks[vigilante.id].push(`You shot ${target.name}. They were Good — but the Doctor saved you.`);
+                result.saved.push(vigilante.id);
+                if (result.feedbacks[target.id]) result.feedbacks[target.id].push("The Vigilante targeted you but you were innocent. They were saved by the Doctor.");
+            } else {
+                result.killed.push(vigilante.id);
+                result.deathEntries.push({ round: state.round, playerName: vigilante.name, cause: "Failed vigilante attempt", isNightDeath: true });
+                result.feedbacks[vigilante.id].push(`You shot ${target.name}. They were Good. You have died.`);
+                if (result.feedbacks[target.id]) result.feedbacks[target.id].push("The Vigilante targeted you, but you were innocent. They perished instead.");
+            }
         }
     }
 
@@ -502,7 +515,7 @@ function resolveNight(state: GameState): NightResult {
     }
 
     // Murderer
-    const skip7 = state.settings.day1NightSkip && state.round === 1 && players.length === 7;
+    const skip7 = state.settings.day1NightSkip && state.round === 1;
     if (murderer && !isJailed(murderer.id) && !skip7 && actions[murderer.id]?.targetId) {
         const target = get(actions[murderer.id].targetId!);
         const doctorSaved = doctor && !isJailed(doctor.id) && actions[doctor.id]?.targetId === target.id && doctor.doctorLastSaved !== target.id;
@@ -744,7 +757,7 @@ function calculateFinalScores(state: GameState): void {
         let roleBonus = 0;
         const role = p.originalRole;
         if (role === "Civilian" && p.alive && winner === "Good") roleBonus = 3;
-        if (role === "Murderer" && winner === "Evil" && allEvilAlive) roleBonus = 3;
+        if (role === "Murderer" && winner === "Evil" && (allEvilAlive || allEvil.length === 1)) roleBonus = 3;
         if (role === "Spy" && p.spyDiscoveredLeaving) roleBonus = 3;
         if (role === "Detective" && p.detectiveFoundMurdererVisit) roleBonus = 3;
         if (role === "Judge" && p.judgeUsedOn.includes("__good_save__")) roleBonus = 3;
@@ -759,40 +772,31 @@ function calculateFinalScores(state: GameState): void {
         breakdown.role = roleBonus;
         points += roleBonus;
 
-        // Objectives (+1 each, max +3)
-        const sel = p.objectiveSelections || [null, null];
+        // Objectives (+1 each)
         let objPoints = 0;
+        const sel = p.objectiveSelections || [null, null];
         if (sel[0]) {
             const target = state.players[sel[0]];
             const likeMatch = (p.objectives[0] || '').match(/likes (.+)\./);
-            if (target && likeMatch && (target.likes || []).includes(likeMatch[1])) {
-                p.objectivesCompleted[0] = true;
-                objPoints += 1;
-                if (!target.objectivesCompleted[2]) {
-                    target.objectivesCompleted[2] = true;
-                    target.cumulativePoints += 1;
-                    target.roundPoints = (target.roundPoints || 0) + 1;
-                    target.pointsBreakdown = target.pointsBreakdown || { survive: 0, win: 0, clues: 0, role: 0, objectives: 0 };
-                    target.pointsBreakdown.objectives = (target.pointsBreakdown.objectives || 0) + 1;
+            if (target && likeMatch) {
+                const pref = likeMatch[1].replace(/\.$/, '');
+                if ((target.likes || []).includes(pref)) {
+                    p.objectivesCompleted[0] = true;
                 }
             }
         }
         if (sel[1]) {
             const target = state.players[sel[1]];
             const dislikeMatch = (p.objectives[1] || '').match(/dislikes (.+)\./);
-            if (target && dislikeMatch && (target.dislikes || []).includes(dislikeMatch[1])) {
-                p.objectivesCompleted[1] = true;
-                objPoints += 1;
-                if (!target.objectivesCompleted[2]) {
-                    target.objectivesCompleted[2] = true;
-                    target.cumulativePoints += 1;
-                    target.roundPoints = (target.roundPoints || 0) + 1;
-                    target.pointsBreakdown = target.pointsBreakdown || { survive: 0, win: 0, clues: 0, role: 0, objectives: 0 };
-                    target.pointsBreakdown.objectives = (target.pointsBreakdown.objectives || 0) + 1;
+            if (target && dislikeMatch) {
+                const pref = dislikeMatch[1].replace(/\.$/, '');
+                if ((target.dislikes || []).includes(pref)) {
+                    p.objectivesCompleted[1] = true;
                 }
             }
         }
-        // Obj 3: completed if someone selected them
+        if (p.objectivesCompleted[0]) objPoints += 1;
+        if (p.objectivesCompleted[1]) objPoints += 1;
         if (p.objectivesCompleted[2]) objPoints += 1;
         breakdown.objectives = objPoints;
         points += objPoints;
@@ -800,6 +804,25 @@ function calculateFinalScores(state: GameState): void {
         p.pointsBreakdown = breakdown;
         p.roundPoints = points;
         p.cumulativePoints += points;
+    });
+    // After main loop: award obj3 to players who were selected by others for obj1/2
+    players.forEach(p => {
+        const sel = p.objectiveSelections || [null, null];
+        [0, 1].forEach(i => {
+            if (!sel[i]) return;
+            const targetId = sel[i];
+            if (!targetId) return;
+            const target = state.players[targetId];
+            if (!target) return;
+            const wasCompleted = p.objectivesCompleted[i];
+            if (wasCompleted && !target.objectivesCompleted[2]) {
+                target.objectivesCompleted[2] = true;
+                target.pointsBreakdown = target.pointsBreakdown || { survive: 0, win: 0, clues: 0, role: 0, objectives: 0 };
+                target.pointsBreakdown.objectives = (target.pointsBreakdown.objectives || 0) + 1;
+                target.roundPoints = (target.roundPoints || 0) + 1;
+                target.cumulativePoints += 1;
+            }
+        });
     });
 }
 function checkSuccession(state: GameState): void {
@@ -957,12 +980,21 @@ export default class MurderMysteryServer implements Party.Server {
                     return;
                 }
                 const existingByName = Object.values(state.players).find(
-                    p => p.nickname === msg.nickname && p.characterId === msg.characterId && p.id !== sender.id
+                    p => p.nickname === msg.nickname && p.id !== sender.id
                 );
                 if (existingByName) {
+                    // Only block if it's a lobby-phase duplicate from a fully different connection
+                    // During game phase, always allow reconnect by nickname regardless of connected status
+                    if (existingByName.connected && state.phase === "lobby" && existingByName.characterId !== msg.characterId) {
+                        sender.send(JSON.stringify({ type: "error", message: "That name is already taken. Please choose a different name." }));
+                        return;
+                    }
                     const oldId = existingByName.id;
                     existingByName.id = sender.id;
                     existingByName.connected = true;
+                    existingByName.name = genderName(CHARACTERS.find(c => c.id === msg.characterId)?.name || existingByName.name, msg.gender || "either");
+                    existingByName.gender = msg.gender || "either";
+                    existingByName.characterId = msg.characterId;
                     state.players[sender.id] = existingByName;
                     delete state.players[oldId];
                     if (state.hostId === oldId) state.hostId = sender.id;
@@ -973,10 +1005,6 @@ export default class MurderMysteryServer implements Party.Server {
                 }
 
                 const taken = Object.values(state.players).find(p => p.id !== sender.id && p.characterId === msg.characterId);
-                if (taken) {
-                    sender.send(JSON.stringify({ type: "error", message: "Character already taken" }));
-                    return;
-                }
                 if (taken) {
                     sender.send(JSON.stringify({ type: "error", message: "Character already taken" }));
                     return;
@@ -1260,15 +1288,8 @@ export default class MurderMysteryServer implements Party.Server {
                 break;
 
             case "night_feedback":
-                if (state.round === 1 && Object.values(state.players).length === 7 && state.settings.day1NightSkip) {
-                    state.round++;
-                    state.phase = "night_action";
-                    this.prepareNightActions();
-                    this.startTimer("night_action");
-                } else {
-                    state.phase = "discussion";
-                    this.startTimer("discussion");
-                }
+                state.phase = "discussion";
+                this.startTimer("discussion");
                 this.broadcastState();
                 break;
 
@@ -1300,13 +1321,13 @@ export default class MurderMysteryServer implements Party.Server {
         const state = this.state!;
         state.nightActions = {};
         const alive = Object.values(state.players).filter(p => p.alive);
-        const is7skip = state.settings.day1NightSkip && state.round === 1 && alive.length === 7;
+        const is7skip = state.settings.day1NightSkip && state.round === 1;
 
         state.nightActionsExpected = alive.filter(p => {
-            if (is7skip && (p.role === "Murderer" || p.role === "Spy")) return false;
+            if (is7skip && EVIL_ROLES.includes(p.role)) return false;
             if (p.role === "Civilian") return false;
-            if (p.role === "Mayor") return false;
-            if (p.role === "Judge") return false;
+            if (p.role === "Mayor" || p.originalRole === "Mayor") return false;
+            if (p.role === "Judge" || p.originalRole === "Judge") return false;
             if (p.role === "Medium") {
                 const deadPlayers = Object.values(state.players).filter(pl => !pl.alive);
                 if (deadPlayers.length === 0) return false;
@@ -1327,16 +1348,18 @@ export default class MurderMysteryServer implements Party.Server {
         state.deathLog.push(...result.deathEntries);
         // Coroner same-night feedback
         const coroner = Object.values(state.players).find(p => p.role === "Coroner" && p.alive);
-        if (coroner) {
+        const witchCoroner = Object.values(state.players).find(p => p.role === "Witch" && p.alive && p.witchCurrentMimic === "Coroner");
+        for (const coronerPlayer of [coroner, witchCoroner].filter(Boolean) as Player[]) {
+            const prefix = coronerPlayer.role === "Witch" ? "[As Coroner] " : "";
             if (result.deathEntries.length > 0) {
                 result.deathEntries.forEach(d => {
-                    if (!coroner.coronerUniqueCauses.includes(d.cause)) {
-                        coroner.coronerUniqueCauses.push(d.cause);
+                    if (coronerPlayer.role === "Coroner" && !coronerPlayer.coronerUniqueCauses.includes(d.cause)) {
+                        coronerPlayer.coronerUniqueCauses.push(d.cause);
                     }
                 });
-                coroner.feedbackLog.push({ round: state.round, phase: "night", text: `Cause of death report: ${result.deathEntries.map(d => `${d.playerName} — ${d.cause}`).join("; ")}.` });
+                coronerPlayer.feedbackLog.push({ round: state.round, phase: "night", text: `${prefix}Cause of death report: ${result.deathEntries.map(d => `${d.playerName} — ${d.cause}`).join("; ")}.` });
             } else {
-                coroner.feedbackLog.push({ round: state.round, phase: "night", text: `No deaths to report this night.` });
+                coronerPlayer.feedbackLog.push({ round: state.round, phase: "night", text: `${prefix}No deaths to report this night.` });
             }
         }
         Object.entries(result.feedbacks).forEach(([pid, msgs]) => {
@@ -1385,7 +1408,18 @@ export default class MurderMysteryServer implements Party.Server {
             if (skipCount > 0) tallyLines.push(`Skip/no vote: ${skipCount}`);
             judge.feedbackLog.push({ round: state.round, phase: "day", text: `Vote tally — ${tallyLines.join(', ')}` });
         }
-
+        // Witch mimicking Mayor: gets vote tally same as Judge
+        const witchPlayer = Object.values(state.players).find(p => p.role === "Witch" && p.alive);
+        if (witchPlayer && witchPlayer.witchCurrentMimic === "Mayor") {
+            const skipCount = alive.filter(v => !state.votes[v.id]?.targetId).length;
+            const tallyLines = Object.entries(counts)
+                .sort((a, b) => b[1] - a[1])
+                .map(([id, c]) => `${state.players[id]?.name}: ${c} vote${c !== 1 ? 's' : ''}`);
+            if (skipCount > 0) tallyLines.push(`Skip/no vote: ${skipCount}`);
+            witchPlayer.feedbackLog.push({ round: state.round, phase: "day", text: `[As Mayor] Vote tally — ${tallyLines.join(', ')}` });
+        }
+        // Witch mimicking Coroner: gets death report (same-night, handled in resolveNightAndAdvance)
+        // Witch mimicking Judge: handled via witchJudgeSave already
         const savedId = state.judgeSave || state.witchJudgeSave;
         if (savedId && candidates.includes(savedId)) {
             if (judge && state.judgeSave) {
@@ -1407,8 +1441,11 @@ export default class MurderMysteryServer implements Party.Server {
             return;
         }
 
-        if (candidates.length > 1 || maxVotes === 0) {
-            const reason = maxVotes === 0 ? "majority skip" : "tie";
+        const skipCount = alive.filter(v => !state.votes[v.id]?.targetId).length;
+        const totalVotePower = alive.reduce((sum, v) => sum + (v.votePower || 1), 0);
+        const isMajoritySkip = maxVotes === 0 || skipCount > totalVotePower - skipCount;
+        if (candidates.length > 1 || isMajoritySkip) {
+            const reason = (maxVotes === 0 || isMajoritySkip) ? "majority skip" : "tie";
             alive.forEach(p => {
                 p.feedbackLog.push({ round: state.round, phase: "day", text: `🗳 No one was voted out (${reason}).` });
             });
@@ -1452,6 +1489,7 @@ export default class MurderMysteryServer implements Party.Server {
     proceedToNight() {
         const state = this.state!;
         state.round++;
+        state.lastVoteOutcome = null;
         Object.values(state.players).forEach(p => {
             if (p.mayorPenaltyNextRound) { p.votePower = 2; p.mayorPenaltyNextRound = false; }
         });
@@ -1516,6 +1554,7 @@ export default class MurderMysteryServer implements Party.Server {
                     role: p.role,
                     alignment: p.alignment,
                 } : {}),
+                pointsBreakdown: state.gameOver ? p.pointsBreakdown : undefined,
             };
         });
 
@@ -1525,6 +1564,7 @@ export default class MurderMysteryServer implements Party.Server {
             phase: state.phase,
             round: state.round,
             lastVoteOutcome: state.lastVoteOutcome,
+            myActionExpected: state.nightActionsExpected.includes(viewerId),
             isHost,
             myId: viewerId,
             players,

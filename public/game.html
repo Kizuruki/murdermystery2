@@ -1339,7 +1339,7 @@
 
     <script>
         // ─── Config ───────────────────────────────────────────────────────────────────
-        const PARTYKIT_HOST = "localhost:1999"; // ← replace for local: "localhost:1999"
+        const PARTYKIT_HOST = "murder-mystery.kizuruki.partykit.dev"; // ← replace for local: "localhost:1999"
 
         const ALL_ROLES = ["Murderer", "Assassin", "Spy", "Witch", "Doctor", "Detective", "Judge", "Mayor", "Psychic", "Medium", "Coroner", "Jailor", "Vigilante", "Civilian"];
         const EVIL_ROLES = ["Murderer", "Assassin", "Spy", "Witch"];
@@ -1449,6 +1449,11 @@
                     break;
                 case 'clue_shared':
                     showNotif(`📢 ${msg.sharedBy} shared a clue`);
+                    if (msg.sharedBy !== (me && me.name) && me) {
+                        me.feedbackLog = me.feedbackLog || [];
+                        me.feedbackLog.push({ round: gameState.round, phase: 'night', text: `📢 ${msg.sharedBy} shared a clue: "${msg.clueText}"` });
+                        renderJournal();
+                    }
                     break;
                 case 'error':
                     showNotif('⚠ ' + msg.message);
@@ -1514,7 +1519,9 @@
             const phaseLabels = { lobby: 'Lobby', role_reveal: 'Role Reveal', day: 'Day', discussion: 'Discussion', voting: 'Voting', judge_save: 'Judge Save', night_action: 'Night', night_feedback: 'Night Feedback', game_over: 'Game Over', scoring: 'Scoring' };
             const nightPhases = ['night_action', 'night_feedback'];
             const dayPhases = ['day', 'discussion', 'voting', 'judge_save'];
-            pill.textContent = phaseLabels[gameState.phase] || gameState.phase;
+            const roundLabel = ['discussion', 'voting', 'judge_save', 'night_action', 'night_feedback'].includes(gameState.phase)
+                ? ` · R${gameState.round}` : '';
+            pill.textContent = (phaseLabels[gameState.phase] || gameState.phase) + roundLabel;
             pill.className = 'phase-pill' + (nightPhases.includes(gameState.phase) ? ' night' : dayPhases.includes(gameState.phase) ? ' day' : '');
 
             startTimerDisplay();
@@ -1566,21 +1573,18 @@
                   <div class="death-name" style="color:var(--gold);font-size:0.85rem;">🗳 ${gameState.lastVoteOutcome}</div>
                 </div>`;
             }
-            // Death announcements
-            // Show deaths from this round during night_feedback, or from previous round during day phases
+            // Death announcements — show relevant deaths only, no duplicates with lastVoteOutcome banner
             let roundDeaths = [];
-            if (phase === 'voting' || phase === 'judge_save') {
-                roundDeaths = gameState.deathLog.filter(d => d.round === gameState.round && !d.isNightDeath);
-            } else if (phase === 'night_feedback') {
+            if (phase === 'night_feedback') {
+                // Show night deaths that just happened
                 roundDeaths = gameState.deathLog.filter(d => d.round === gameState.round && d.isNightDeath);
-            } else if (phase === 'discussion') {
-                roundDeaths = gameState.deathLog.filter(d => d.round === gameState.round - 1 && !d.isNightDeath);
-            } else if (phase === 'night_action') {
-                roundDeaths = [];
+            } else if (phase === 'discussion' || phase === 'voting' || phase === 'judge_save' || phase === 'night_action') {
+                // Show night deaths from previous round at start of day
+                roundDeaths = gameState.deathLog.filter(d => d.round === gameState.round - 1 && d.isNightDeath);
             }
+            // Vote-outs are already shown via lastVoteOutcome banner above — don't duplicate them
             roundDeaths.forEach(d => {
-                const text = d.isNightDeath ? `☩ ${d.playerName} died last night.` : `🗳 ${d.playerName} was voted out.`;
-                html += `<div class="death-banner"><div class="death-name">${text}</div></div>`;
+                html += `<div class="death-banner"><div class="death-name">☩ ${d.playerName} died last night.</div></div>`;
             });
 
             const actionHtml = renderActionPanel();
@@ -1729,60 +1733,89 @@
         function renderActionPanel() {
             if (!me || !me.alive) return '';
             const phase = gameState.phase;
-            if (phase === 'night_action') return renderNightActionPanel();
+            if (phase === 'night_action') {
+                if (!gameState.myActionExpected) {
+                    return `<div class="action-panel"><div class="action-header">☾ NIGHT — No action required</div><div class="action-body" style="color:var(--text-dim);font-style:italic;">Rest and wait for morning.</div></div>`;
+                }
+                return renderNightActionPanel();
+            }
             if (phase === 'voting') return renderVotingPanel();
             return '';
         }
 
         function renderNightActionPanel() {
             const role = me.role;
-            const round = gameState.round;
-            const playerCount = Object.keys(gameState.players).length;
-            const is7skip = gameState.settings?.day1NightSkip && round === 1 && playerCount === 7;
 
-            if (['Civilian', 'Judge', 'Coroner'].includes(role)) {
-                return `<div class="action-panel"><div class="action-header">☾ NIGHT — No action required</div><div class="action-body" style="color:var(--text-dim);font-style:italic;">Rest and wait for morning.</div></div>`;
+            // Witch Night 1: no current mimic, just pick next mimic
+            if (role === 'Witch' && !me.witchCurrentMimic) {
+                const mimicHistory = me.witchMimicHistory || [];
+                const allMimicable = ["Murderer","Doctor","Detective","Judge","Mayor","Psychic","Medium","Coroner","Spy","Jailor"];
+                const available = allMimicable.filter(r => !mimicHistory.includes(r));
+                return `<div class="action-panel">
+                    <div class="action-header">☾ NIGHT — Witch (choose first mimic)</div>
+                    <div class="action-body">
+                        <div style="font-size:0.82rem;color:var(--text-dim);font-style:italic;margin-bottom:0.75rem;">No ability yet — choose a role to mimic starting next night.</div>
+                        <select onchange="nightActionSecondary=this.value" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:3px;padding:0.6rem;color:var(--text);font-family:'IM Fell English',serif;font-size:0.9rem;outline:none;">
+                            <option value="">Choose role to mimic next...</option>
+                            ${available.map(r => `<option value="${r}">${ROLE_ICONS[r]||''} ${r}</option>`).join('')}
+                        </select>
+                        <button class="submit-btn" onclick="nightActionTarget=null;submitNightAction();" style="margin-top:0.75rem;">Confirm Choice</button>
+                    </div>
+                </div>`;
             }
-            if ((role === 'Murderer' || role === 'Spy') && is7skip) {
-                return `<div class="action-panel"><div class="action-header">☾ NIGHT 1 — No action (7 players)</div><div class="action-body" style="color:var(--text-dim);font-style:italic;">Murderer and Spy do not act on Night 1.</div></div>`;
+
+            // Witch with day-role mimic: no night target, just pick next mimic
+            const witchDayRoles = ['Judge', 'Mayor', 'Coroner'];
+            if (role === 'Witch' && me.witchCurrentMimic && witchDayRoles.includes(me.witchCurrentMimic)) {
+                const mimicHistory = me.witchMimicHistory || [];
+                const allMimicable = ["Murderer","Doctor","Detective","Judge","Mayor","Psychic","Medium","Coroner","Spy","Jailor"];
+                const available = allMimicable.filter(r => !mimicHistory.includes(r));
+                return `<div class="action-panel">
+                    <div class="action-header">☾ NIGHT — Witch (${me.witchCurrentMimic} is a day role)</div>
+                    <div class="action-body">
+                        <div style="font-size:0.82rem;color:var(--text-dim);font-style:italic;margin-bottom:0.75rem;">Your current mimic (${me.witchCurrentMimic}) acts during the day. Choose your next mimic.</div>
+                        <select onchange="nightActionSecondary=this.value" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:3px;padding:0.6rem;color:var(--text);font-family:'IM Fell English',serif;font-size:0.9rem;outline:none;">
+                            <option value="">Choose role to mimic next...</option>
+                            ${available.map(r => `<option value="${r}">${ROLE_ICONS[r]||''} ${r}</option>`).join('')}
+                        </select>
+                        <div style="font-size:0.72rem;color:var(--text-dim);margin-top:0.35rem;font-style:italic;">Already mimicked: ${mimicHistory.join(', ') || 'none'}</div>
+                        <button class="submit-btn" onclick="nightActionTarget=null;submitNightAction();" style="margin-top:0.75rem;">Confirm</button>
+                    </div>
+                </div>`;
             }
-            if (role === 'Assassin' && me.assassinUsed) {
-                return `<div class="action-panel"><div class="action-header">☾ NIGHT — Assassin (kill used)</div><div class="action-body" style="color:var(--text-dim);font-style:italic;">You have already used your unblockable kill.</div></div>`;
-            }
-            if (role === 'Vigilante' && me.vigilanteUsed) {
-                return `<div class="action-panel"><div class="action-header">☾ NIGHT — Vigilante (shot used)</div><div class="action-body" style="color:var(--text-dim);font-style:italic;">You have already used your shot.</div></div>`;
-            }
+
             if (nightActionSubmitted) {
                 return `<div class="action-panel"><div class="action-header">☾ NIGHT — Action Submitted</div><div class="action-body"><div class="submit-btn submitted">✓ Waiting for others...</div></div></div>`;
             }
 
             const roleDescs = {
-                Murderer: 'Choose someone to kill tonight.', Assassin: 'Use your one unblockable kill, or save it.',
-                Spy: 'Choose someone to spy on.', Witch: `Choose your target for your current ability${me.witchCurrentMimic ? ` (${me.witchCurrentMimic})` : ''}. Also pick your next mimic.`,
-                Doctor: 'Choose someone to protect tonight.', Detective: 'Choose a house to watch tonight.',
-                Jailor: 'Choose someone to jail tonight.', Vigilante: 'Use your one-shot kill now, or wait.',
-                Psychic: 'Choose someone to receive a vision about.', Medium: 'Choose a dead player to learn their role.',
+                Murderer: 'Choose someone to kill tonight.',
+                Assassin: 'Use your one unblockable kill, or save it.',
+                Spy: 'Choose someone to spy on.',
+                Witch: `Choose your target for your current ability (${me.witchCurrentMimic}). Also pick your next mimic.`,
+                Doctor: 'Choose someone to protect tonight.',
+                Detective: 'Choose a house to watch tonight.',
+                Jailor: 'Choose someone to jail tonight.',
+                Vigilante: 'Use your one-shot kill now, or wait.',
+                Psychic: 'Choose someone to receive a vision about.',
+                Medium: 'Choose a dead player to learn their role.',
             };
 
             const alivePlayers = Object.values(gameState.players).filter(p => p.alive && p.id !== myId);
             const targetPool = role === 'Medium' ? Object.values(gameState.players).filter(p => !p.alive) : alivePlayers;
 
             let html = `<div class="action-panel">
-              <div class="action-header">...</div>
-              <div class="action-body">
-                <div style="...desc...">${roleDescs[role]}</div>
-                <div class="player-picker">`;
+                <div class="action-header">☾ NIGHT — ${role}</div>
+                <div class="action-body">
+                    <div style="font-size:0.82rem;color:var(--text-dim);font-style:italic;margin-bottom:0.75rem;">${roleDescs[role] || ''}</div>
+                    <div class="player-picker">`;
 
-            // No action option first, inside the picker
             if (!['Assassin','Vigilante'].includes(role)) {
                 html += `<div class="picker-item${nightActionTarget === null ? ' selected' : ''}" onclick="selectNightTarget(null)">
-                  <div><div class="picker-item-name">No action</div><div class="picker-item-sub">Skip this night</div></div></div>`;
-            }
-
-            // Then the "Don't use" option for Assassin/Vigilante
-            if (['Assassin','Vigilante'].includes(role)) {
+                    <div><div class="picker-item-name">No action</div><div class="picker-item-sub">Skip this night</div></div></div>`;
+            } else {
                 html += `<div class="picker-item${nightActionTarget === null ? ' selected' : ''}" onclick="selectNightTarget(null)">
-                  <div><div class="picker-item-name">Don't use</div><div class="picker-item-sub">Save for later</div></div></div>`;
+                    <div><div class="picker-item-name">Don't use</div><div class="picker-item-sub">Save for later</div></div></div>`;
             }
 
             targetPool.forEach(p => {
@@ -1790,28 +1823,26 @@
                 const alreadyJailed = role === 'Jailor' && (me.jailedHistory || []).includes(p.id);
                 if (isLastSaved || alreadyJailed) return;
                 html += `<div class="picker-item${nightActionTarget === p.id ? ' selected' : ''}" onclick="selectNightTarget('${p.id}')">
-                  <div><div class="picker-item-name">${p.name}</div><div class="picker-item-sub">${p.nickname}</div></div></div>`;
+                    <div><div class="picker-item-name">${p.name}</div><div class="picker-item-sub">${p.nickname}</div></div></div>`;
             });
 
             html += `</div>`;
 
             if (role === 'Witch') {
                 const mimicHistory = me.witchMimicHistory || [];
-                const allMimicable = ["Doctor", "Detective", "Judge", "Mayor", "Psychic", "Medium", "Coroner", "Spy", "Jailor"];
+                const allMimicable = ["Murderer","Doctor","Detective","Judge","Mayor","Psychic","Medium","Coroner","Spy","Jailor"];
                 const available = allMimicable.filter(r => !mimicHistory.includes(r));
                 html += `<div style="margin-top:1rem;">
-              <div style="font-family:'Cinzel',serif;font-size:0.68rem;letter-spacing:0.15em;color:var(--gold);margin-bottom:0.5rem;">NEXT MIMIC</div>
-              <select onchange="nightActionSecondary=this.value" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:3px;padding:0.6rem;color:var(--text);font-family:'IM Fell English',serif;font-size:0.9rem;outline:none;">
-                <option value="">Choose role to mimic next...</option>
-                ${available.map(r => `<option value="${r}">${ROLE_ICONS[r] || ''} ${r}</option>`).join('')}
-              </select>
-              <div style="font-size:0.72rem;color:var(--text-dim);margin-top:0.35rem;font-style:italic;">Already mimicked: ${mimicHistory.join(', ') || 'none'}</div>
-            </div>`;
+                    <div style="font-family:'Cinzel',serif;font-size:0.68rem;letter-spacing:0.15em;color:var(--gold);margin-bottom:0.5rem;">NEXT MIMIC</div>
+                    <select onchange="nightActionSecondary=this.value" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:3px;padding:0.6rem;color:var(--text);font-family:'IM Fell English',serif;font-size:0.9rem;outline:none;">
+                        <option value="">Choose role to mimic next...</option>
+                        ${available.map(r => `<option value="${r}">${ROLE_ICONS[r]||''} ${r}</option>`).join('')}
+                    </select>
+                    <div style="font-size:0.72rem;color:var(--text-dim);margin-top:0.35rem;font-style:italic;">Already mimicked: ${mimicHistory.join(', ') || 'none'}</div>
+                </div>`;
             }
 
-            const canSubmit = nightActionTarget !== undefined;
-
-            html += `<button class="submit-btn" onclick="submitNightAction()" ${!canSubmit ? 'disabled' : ''}>Submit Night Action</button>`;
+            html += `<button class="submit-btn" onclick="submitNightAction()" ${nightActionTarget === undefined ? 'disabled' : ''}>Submit Night Action</button>`;
             html += `</div></div>`;
             return html;
         }
@@ -2068,7 +2099,14 @@
             input.value = '';
         }
 
-        function shareClue(clueText) { send({ type: 'share_clue', clueText }); }
+        function shareClue(clueText) {
+            send({ type: 'share_clue', clueText });
+            if (me) {
+                me.sharedClues = me.sharedClues || [];
+                if (!me.sharedClues.includes(clueText)) me.sharedClues.push(clueText);
+                renderJournal();
+            }
+        }
 
         // ─── Role Overlay ─────────────────────────────────────────────────────────────
         function showRoleOverlay() {
@@ -2111,13 +2149,33 @@
         function showRoleModal() {
             if (!me) return;
             const content = document.getElementById('role-modal-content');
+            const pool = gameState.settings?.rolePool;
+            const dist = gameState.defaultDistribution;
+            let poolRoles = [];
+            if (pool) {
+                poolRoles = [
+                    ...pool.evilRoles.map(r => `<span style="color:#c87070">${r}</span>`),
+                    ...pool.goodRoles.map(r => `<span style="color:#4caf7a">${r}</span>`),
+                    `<span style="color:var(--text-dim)">Civilian ×${pool.civilianCount}</span>`
+                ];
+            } else if (dist) {
+                poolRoles = [
+                    ...dist.evil.map(r => `<span style="color:#c87070">${r}</span>`),
+                    ...dist.good.map(r => `<span style="color:#4caf7a">${r}</span>`),
+                    `<span style="color:var(--text-dim)">Civilian ×${dist.civilians}</span>`
+                ];
+            }
             content.innerHTML = `
-            <div style="font-size:2rem;margin-bottom:0.5rem;">${ROLE_ICONS[me.role] || '?'}</div>
-            <div style="font-family:'Cinzel',serif;font-size:1.1rem;color:${EVIL_ROLES.includes(me.role) ? 'var(--crimson-pale)' : 'var(--good-bright)'};margin-bottom:0.25rem;">${me.role}</div>
-            <div style="font-size:0.82rem;color:var(--text-dim);font-style:italic;margin-bottom:0.75rem;">${me.alignment || ''}</div>
-            ${EVIL_ROLES.includes(me.role) ? `<div style="font-size:0.78rem;color:var(--crimson-pale);">
-              ${Object.values(gameState.players).filter(p => p.id !== myId && EVIL_ROLES.includes(p.role || '')).map(p => `${p.name}: ${p.role || '?'}`).join('<br>') || 'No other evil players known'}
-            </div>`: ''}`;
+                <div style="font-size:2rem;margin-bottom:0.5rem;">${ROLE_ICONS[me.role] || '?'}</div>
+                <div style="font-family:'Cinzel',serif;font-size:1.1rem;color:${EVIL_ROLES.includes(me.role) ? 'var(--crimson-pale)' : 'var(--good-bright)'};margin-bottom:0.25rem;">${me.role}</div>
+                <div style="font-size:0.82rem;color:var(--text-dim);font-style:italic;margin-bottom:0.75rem;">${me.alignment || ''}</div>
+                ${EVIL_ROLES.includes(me.role) ? `<div style="font-size:0.78rem;color:var(--crimson-pale);margin-bottom:0.75rem;">
+                  ${Object.values(gameState.players).filter(p => p.id !== myId && EVIL_ROLES.includes(p.role || '')).map(p => `${p.name}: ${p.role || '?'}`).join('<br>') || 'No other evil players known'}
+                </div>` : ''}
+                ${poolRoles.length ? `<div style="margin-top:0.5rem;background:var(--surface2);border:1px solid var(--border-gold);border-radius:4px;padding:0.75rem;text-align:left;">
+                    <div style="font-family:'Cinzel',serif;font-size:0.62rem;letter-spacing:0.18em;color:var(--gold);margin-bottom:0.5rem;">ROLES IN PLAY</div>
+                    <div style="font-size:0.8rem;line-height:1.8;">${poolRoles.join('<br>')}</div>
+                </div>` : ''}`;
             document.getElementById('role-modal').classList.remove('hidden');
         }
 
@@ -2190,7 +2248,7 @@
 
             let survivorsHtml = `<h3>Final Scores</h3>
             <div style="font-size:0.62rem;font-family:'Cinzel',serif;letter-spacing:0.08em;color:var(--text-dim);display:grid;grid-template-columns:1fr 40px 40px 40px 40px 40px 50px;gap:2px;padding:0.3rem 0;border-bottom:1px solid var(--border);margin-bottom:0.25rem;">
-              <span>Player</span><span>Win</span><span>Sur</span><span>Obj</span><span>Role</span><span>Clue</span><span>Total</span>
+              <span>Player</span><span>Total</span><span>Win</span><span>Sur</span><span>Obj</span><span>Role</span><span>Clue</span>
             </div>`;
 
             players.forEach(p => {
@@ -2207,12 +2265,12 @@
                     <div style="font-size:0.65rem;color:${roleColor};">${roleDisplay}</div>
                     <div style="font-size:0.62rem;color:var(--text-dim);font-style:italic;">${p.nickname} · ${p.alive ? 'Survived' : 'Eliminated'}</div>
                   </div>
-                  <span style="font-size:0.75rem;text-align:center;">${bd.win}</span>
-                  <span style="font-size:0.75rem;text-align:center;">${bd.survive}</span>
-                  <span style="font-size:0.75rem;text-align:center;">${bd.objectives}</span>
-                  <span style="font-size:0.75rem;text-align:center;">${bd.role}</span>
-                  <span style="font-size:0.75rem;text-align:center;">${bd.clues}</span>
-                  <span style="font-family:'Cinzel',serif;font-size:0.82rem;color:var(--gold);text-align:center;">${(p.cumulativePoints||0)}</span>
+                    <span style="font-family:'Cinzel',serif;font-size:0.82rem;color:var(--gold);text-align:center;">${(p.cumulativePoints || 0)}</span>
+                    <span style="font-size:0.75rem;text-align:center;">${bd.win}</span>
+                    <span style="font-size:0.75rem;text-align:center;">${bd.survive}</span>
+                    <span style="font-size:0.75rem;text-align:center;">${bd.objectives}</span>
+                    <span style="font-size:0.75rem;text-align:center;">${bd.role}</span>
+                    <span style="font-size:0.75rem;text-align:center;">${bd.clues}</span>
                 </div>`;
             });
             document.getElementById('go-survivors').innerHTML = survivorsHtml;
