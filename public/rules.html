@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<link rel="icon" type="image/png" href="favicon.png">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Murder Mystery — Rules</title>
@@ -124,14 +125,18 @@ const RULES = [
         icon: "🔄",
         type: "neutral",
         tags: ["all"],
-        body: `Each round follows this order:
-        <ul>
-          <li><strong>Discussion</strong> (5 min) — Talk, accuse, defend</li>
-          <li><strong>Voting</strong> (45s) — Eliminate a suspect</li>
-          <li><strong>Night Actions</strong> (90s) — Submit your role's action privately</li>
-          <li><strong>Night Feedback</strong> (45s) — Read your private results</li>
-        </ul>
-        <strong>Day 1:</strong> No discussion or voting — goes straight to night.`
+        body: `The game begins with a <strong>Role Reveal</strong> (60s) — read your role and the roles in play privately, then hide the screen.
+                <br><br>
+                Each round after that follows this order:
+                <ul>
+                  <li><strong>Discussion</strong> (5 min) — Talk, accuse, defend. Night deaths are announced here.</li>
+                  <li><strong>Voting</strong> (45s) — Tap a player to eliminate them, or skip</li>
+                  <li><strong>Night Actions</strong> (90s) — Submit your role's action privately</li>
+                  <li><strong>Night Feedback</strong> (45s) — Read your private results before the next discussion begins</li>
+                </ul>
+                <strong>Round 1:</strong> Starts directly with Night Actions — no discussion or voting on the first night.
+                <br><br>
+                <strong>Day 1 Night Skip (optional setting):</strong> When enabled, all Evil roles cannot act on Night 1. Witch can still choose their first mimic role.`
       },
       {
         title: "Death Rules",
@@ -139,10 +144,12 @@ const RULES = [
         type: "neutral",
         tags: ["all"],
         body: `<ul>
-          <li>Dead players cannot speak in town discussion (unless the host allows ghost chat)</li>
-          <li>Dead players do <strong>not</strong> learn who killed them</li>
-          <li>Dead players are shown with a strikethrough on the tracker</li>
-        </ul>`
+                  <li>Dead players cannot send chat messages</li>
+                  <li>Dead players do <strong>not</strong> learn who killed them or their cause of death</li>
+                  <li>Dead players can still observe the game — they see all phases and feedback</li>
+                  <li>Dead players are shown with a strikethrough on the tracker</li>
+                  <li>Vote-outs are announced immediately after voting ends. Night deaths are announced at the start of the next Discussion phase.</li>
+                </ul>`
       }
     ]
   },
@@ -157,13 +164,14 @@ const RULES = [
         type: "evil",
         tags: ["evil","night"],
         body: `Kills one living player each night.
-        <ul>
-          <li>Can kill starting Night 1</li>
-          <li>Kill can be blocked by the <strong>Doctor</strong></li>
-          <li>Kill can be blocked by the <strong>Jailor</strong> (if the Murderer is jailed)</li>
-          <li>Cannot kill the same person the Doctor saves</li>
-        </ul>
-        <strong>Succession:</strong> If the Murderer dies, the next Evil player in line inherits the kill: Assassin → Spy → Witch.`
+                <ul>
+                  <li>Can kill starting Night 1 (unless the Day 1 Night Skip setting is enabled)</li>
+                  <li>Kill can be blocked by the <strong>Doctor</strong></li>
+                  <li>Kill can be blocked by the <strong>Jailor</strong> (if the Murderer is jailed)</li>
+                  <li>Cannot kill the same person the Doctor saved the previous night</li>
+                  <li>If jailed the same night they try to kill, the kill fails — and if the Murderer targets the jailed player, the Jailor also dies</li>
+                </ul>
+                <strong>Succession:</strong> If the Murderer dies, the next Evil player in line inherits the Murderer role: Assassin → Spy → Witch.`
       },
       {
         title: "Assassin",
@@ -190,21 +198,28 @@ const RULES = [
           <li>If the target <strong>stayed home</strong>: learns they did not leave</li>
           <li>Spy is part of the Evil succession chain</li>
         </ul>
-        In 7-player games, Spy does not act on Night 1.`
+        When the Day 1 Night Skip setting is enabled, Spy cannot act on Night 1.`
       },
       {
         title: "Witch",
         icon: "🧙",
         type: "evil",
         tags: ["evil","night"],
-        body: `Mimics a Good role's ability each cycle.
-        <ul>
-          <li>Each night: choose a role to mimic <em>next</em> night, and use your current mimic ability</li>
-          <li>Cannot mimic the same role twice</li>
-          <li>Mimicable roles: Doctor, Detective, Judge, Mayor, Psychic, Medium, Coroner, Spy, Jailor</li>
-          <li>Gets that role's ability for one full day+night cycle</li>
-        </ul>
-        Available at <strong>11+ players.</strong>`
+        body: `Copies another role's ability, cycling through them across the game.
+                <ul>
+                  <li><strong>Night 1:</strong> Choose a role to mimic — your ability is not yet active</li>
+                  <li><strong>Night 2+:</strong> Use your current mimic ability, then choose the next role to mimic</li>
+                  <li>Cannot mimic the same role twice in the same game</li>
+                  <li>Mimicable roles: Murderer, Doctor, Detective, Spy, Jailor, Psychic, Medium, Judge, Mayor, Coroner</li>
+                  <li>When mimicking a <strong>day role</strong> (Judge, Mayor, Coroner): the ability activates during the day or automatically — no night action required that cycle, just pick your next mimic</li>
+                  <li>When mimicking a <strong>night role</strong>: choose a target during the Night Actions phase</li>
+                  <li>When mimicking <strong>Murderer</strong>: your kill can be blocked by the Doctor</li>
+                  <li>When mimicking <strong>Judge</strong>: you can save someone from being voted out (one-time)</li>
+                  <li>When mimicking <strong>Mayor</strong>: you receive the full vote tally after each voting phase</li>
+                  <li>When mimicking <strong>Coroner</strong>: you receive cause-of-death reports automatically</li>
+                  <li>When the Day 1 Night Skip is enabled, Witch cannot act on Night 1 but can still choose their first mimic</li>
+                </ul>
+                Available at <strong>11+ players.</strong>`
       }
     ]
   },
@@ -219,12 +234,13 @@ const RULES = [
         type: "good",
         tags: ["good","night"],
         body: `Each night, protects one player from being killed.
-        <ul>
-          <li>If the Murderer targets the protected player, they survive</li>
-          <li>Cannot block the Assassin's unblockable kill</li>
-          <li>Cannot protect the same person two nights in a row</li>
-          <li>Receives feedback: whether they actually saved someone or not</li>
-        </ul>`
+                <ul>
+                  <li>If the Murderer targets the protected player, they survive</li>
+                  <li>Can block a Vigilante shot — if the Vigilante shoots a Good player and the Doctor protects the Vigilante that same night, the Vigilante survives</li>
+                  <li>Cannot block the Assassin's unblockable kill</li>
+                  <li>Cannot protect the same person two nights in a row</li>
+                  <li>Receives feedback: whether the person they protected was in danger or not</li>
+                </ul>`
       },
       {
         title: "Detective",
@@ -257,11 +273,11 @@ const RULES = [
         type: "good",
         tags: ["good","day"],
         body: `Has double voting power during day votes.
-        <ul>
-          <li>Mayor's vote counts as <strong>2 votes</strong></li>
-          <li>If the Mayor votes for someone who gets eliminated and that person is <strong>Good</strong>: Mayor's power drops to 1 vote for the next round</li>
-          <li>After voting, learns the alignment of any player they voted for who was eliminated</li>
-        </ul>`
+                <ul>
+                  <li>Mayor's vote counts as <strong>2 votes</strong></li>
+                  <li>No night action — Mayor rests each night</li>
+                  <li><strong>Penalty:</strong> If the Mayor votes for someone who gets eliminated and that person turns out to be <strong>Good</strong>, the Mayor's vote power drops to 1 for the next round only</li>
+                </ul>`
       },
       {
         title: "Psychic",
@@ -293,12 +309,13 @@ const RULES = [
         title: "Coroner",
         icon: "🏥",
         type: "good",
-        tags: ["good","night"],
-        body: `Automatically receives cause of death reports, one night delayed.
+        tags: ["good"],
+        body: `Automatically receives cause of death reports after each night.
         <ul>
-          <li>If someone dies on Night 2, the Coroner learns their cause of death on Night 3</li>
+          <li>No action required — reports arrive in the feedback log automatically</li>
+          <li>After each night, learns the name and exact cause of death for every player who died that night</li>
           <li>Cause of death options: Murdered, Assassinated, Vigilante kill, Failed vigilante attempt, Voted out, Jailed and murdered</li>
-          <li>No active night action required — info arrives automatically</li>
+          <li>This information is private — only the Coroner sees it</li>
         </ul>
         Available at <strong>14+ players.</strong>`
       },
@@ -322,12 +339,13 @@ const RULES = [
         type: "good",
         tags: ["good","night"],
         body: `Has one shot for the entire game. Choose wisely.
-        <ul>
-          <li>If target is <strong>Evil</strong>: target dies, Vigilante survives</li>
-          <li>If target is <strong>Good</strong>: Vigilante dies, target survives</li>
-          <li>Can choose to hold the shot and not use it any given night</li>
-        </ul>
-        Replaced by Jailor by default. Host can enable both at 16 players.`
+                <ul>
+                  <li>If target is <strong>Evil</strong>: target dies, Vigilante survives</li>
+                  <li>If target is <strong>Good</strong>: Vigilante dies, target is unharmed</li>
+                  <li>The Doctor can intervene: if the Doctor protects the Vigilante on the same night they shoot a Good player, the Vigilante survives their mistake</li>
+                  <li>Can choose to hold the shot and not use it any given night</li>
+                </ul>
+                Replaced by Jailor by default. Host can enable both at 16 players.`
       },
       {
         title: "Civilian",
@@ -406,7 +424,9 @@ const RULES = [
         </ul>
         Each completed objective is worth <strong>⅓ of a point</strong>, for a maximum of 1 bonus point from objectives.
         <br><br>
-        To complete Objectives 1 and 2, tap the objective checkbox and select the player who fulfills it. This also automatically completes that player's Objective 3.`
+        To complete Objectives 1 and 2, use the dropdown under each objective to select the player you believe fulfills it. The game verifies your selections automatically at the end of the game.
+        <br><br>
+        When your selection is correct, that player's <strong>Objective 3</strong> is also completed — they get credit for being identified.`
       }
     ]
   },
@@ -442,26 +462,35 @@ const RULES = [
         tags: ["scoring"],
         body: `Points accumulate across multiple games in a session until the host ends the session.
         <ul>
-          <li><strong>+1</strong> — Survived to the end</li>
-          <li><strong>+2</strong> — Won (Good team)</li>
-          <li><strong>+3</strong> — Won (Evil team)</li>
-          <li><strong>+1 per clue</strong> — Each hidden clue found</li>
-          <li><strong>+⅓ per objective</strong> — Up to +1 from objectives</li>
-        </ul>`
+          <li><strong>+3</strong> — Survived to the end of the game</li>
+          <li><strong>+6</strong> — Won (Good team)</li>
+          <li><strong>+9</strong> — Won (Evil team)</li>
+          <li><strong>+3 per clue</strong> — Each hidden clue found</li>
+          <li><strong>+1 per objective</strong> — Up to +3 from objectives (one point each)</li>
+          <li><strong>+3</strong> — Role bonus (see below)</li>
+        </ul>
+        Points are shown in the end-game leaderboard with columns: Total, Win, Survive, Objectives, Role, Clues.`
       },
       {
         title: "Role Bonus Points",
         icon: "⭐",
         type: "neutral",
         tags: ["scoring"],
-        body: `Max +1 bonus point per player. These do not stack — only the highest applies.
+        body: `Each role has a unique condition for earning <strong>+3 bonus points</strong>. Only one bonus per player.
         <ul>
-          <li><strong>Civilian:</strong> +1 if won and survived</li>
-          <li><strong>Murderer:</strong> +1 if won with both Murderer and Spy alive (or sole Evil in game)</li>
-          <li><strong>Spy:</strong> +1 if investigated someone leaving their house (Doctor or Detective)</li>
-          <li><strong>Doctor:</strong> +1 if successfully saved a player</li>
-          <li><strong>Detective:</strong> +1 if investigated a house the Murderer visited (or found Murderer/Spy leaving)</li>
-          <li><strong>Judge:</strong> +1 if saved an innocent (Good) player from being voted out</li>
+          <li><strong>Civilian:</strong> Good team wins and you survived</li>
+          <li><strong>Murderer:</strong> Evil wins and all original Evil players are still alive (or you were the only Evil player)</li>
+          <li><strong>Spy:</strong> Investigated a player who turned out to be the Doctor or Detective leaving their house</li>
+          <li><strong>Doctor:</strong> Successfully saved at least one player from death</li>
+          <li><strong>Detective:</strong> Watched a house that the Murderer visited, or caught the Murderer/Spy leaving their house</li>
+          <li><strong>Judge:</strong> Used your save on a Good (innocent) player</li>
+          <li><strong>Assassin:</strong> Successfully used your unblockable kill</li>
+          <li><strong>Witch:</strong> Used your mimic ability at least twice</li>
+          <li><strong>Psychic:</strong> Had a vision about an Evil player</li>
+          <li><strong>Vigilante:</strong> Shot and killed an Evil player</li>
+          <li><strong>Medium:</strong> Contacted a dead player who turned out to be Evil</li>
+          <li><strong>Coroner:</strong> Collected reports on at least 3 unique causes of death</li>
+          <li><strong>Jailor:</strong> Jailed the Murderer on a night they had a kill target (prevented a murder)</li>
         </ul>`
       }
     ]
